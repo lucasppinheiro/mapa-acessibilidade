@@ -18,6 +18,7 @@
     "coverage": "npm run coverage --prefix backend && npm run coverage --prefix frontend",
     "openapi:lint": "redocly lint docs/openapi.yaml",
     "build": "npm run build --prefix frontend",
+    "build:production": "npm ci --omit=dev --prefix backend && npm ci --include=dev --prefix frontend && npm run build",
     "start": "npm run start --prefix backend",
     "seed": "npm run seed --prefix backend",
     "migrate": "npm run migrate --prefix backend",

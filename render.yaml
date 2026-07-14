@@ -5,7 +5,7 @@ services:
     runtime: node
     plan: free
     autoDeployTrigger: checksPass
-    buildCommand: npm ci && npm run install:apps && npm run build
+    buildCommand: npm run build:production
     startCommand: npm start
     healthCheckPath: /api/v1/health/ready
     envVars:
