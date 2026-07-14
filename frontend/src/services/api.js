@@ -1,71 +1,45 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: '/api',
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+const API_BASE_URL = '/api/v1';
 
-const AUTH_STORAGE_KEYS = {
-  accessToken: 'token',
-  refreshToken: 'refreshToken',
-  usuario: 'usuario'
-};
-
-const codigosErroToken = [
-  'TOKEN_NAO_FORNECIDO',
-  'TOKEN_EXPIRADO',
-  'TOKEN_INVALIDO',
-  'TOKEN_SESSAO_INVALIDO',
-  'USUARIO_NAO_ENCONTRADO',
-  'SESSAO_INVALIDADA',
-  'FALHA_AUTENTICACAO',
-  'REFRESH_TOKEN_EXPIRADO',
-  'REFRESH_TOKEN_INVALIDO',
-  'REFRESH_TOKEN_NAO_FORNECIDO'
-];
-
-const getAccessToken = () => localStorage.getItem(AUTH_STORAGE_KEYS.accessToken);
-const getRefreshToken = () => localStorage.getItem(AUTH_STORAGE_KEYS.refreshToken);
-
-const setTokens = ({ token, accessToken, refreshToken }) => {
-  const access = accessToken || token;
-  if (access) {
-    localStorage.setItem(AUTH_STORAGE_KEYS.accessToken, access);
-  }
-  if (refreshToken) {
-    localStorage.setItem(AUTH_STORAGE_KEYS.refreshToken, refreshToken);
-  }
-};
-
-const limparSessaoLocal = () => {
-  localStorage.removeItem(AUTH_STORAGE_KEYS.accessToken);
-  localStorage.removeItem(AUTH_STORAGE_KEYS.refreshToken);
-  localStorage.removeItem(AUTH_STORAGE_KEYS.usuario);
-};
-
+let accessToken = null;
 let refreshEmAndamento = null;
 
-const renovarSessao = async () => {
-  const refreshToken = getRefreshToken();
+export const definirAccessToken = (token) => {
+  accessToken = token || null;
+};
 
-  if (!refreshToken) {
-    throw new Error('Refresh token ausente');
-  }
+export const limparAccessToken = () => {
+  accessToken = null;
+};
 
-  const { data } = await axios.post('/api/auth/refresh', { refreshToken }, {
-    headers: { 'Content-Type': 'application/json' }
-  });
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' }
+});
 
-  setTokens(data);
+const clienteRefresh = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+const extrairCodigoErro = (error) => error.response?.data?.erro?.codigo;
+
+export const extrairMensagemErro = (error, fallback = 'Não foi possível concluir a operação.') => (
+  error.response?.data?.erro?.mensagem || fallback
+);
+
+export const renovarSessao = async () => {
+  const { data } = await clienteRefresh.post('/auth/refresh');
+  definirAccessToken(data.accessToken);
   return data;
 };
 
 api.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
   }
   return config;
 });
@@ -73,40 +47,31 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const status = error.response?.status;
-    const codigo = error.response?.data?.codigo;
-    const erroDeToken = codigosErroToken.includes(codigo);
-    const requisicaoOriginal = error.config || {};
-    const rota = requisicaoOriginal.url || '';
-    const rotaAuth = rota.includes('/auth/login') || rota.includes('/auth/registro') || rota.includes('/auth/refresh');
+    const original = error.config || {};
+    const codigo = extrairCodigoErro(error);
+    const rota = String(original.url || '');
+    const ehRotaAuth = ['/auth/login', '/auth/registro', '/auth/refresh'].some((prefixo) => rota.startsWith(prefixo));
 
-    if (status === 401 && codigo === 'TOKEN_EXPIRADO' && !requisicaoOriginal._retry && !rotaAuth) {
-      requisicaoOriginal._retry = true;
-
+    if (error.response?.status === 401 && !original._retry && !ehRotaAuth) {
+      original._retry = true;
       try {
         if (!refreshEmAndamento) {
           refreshEmAndamento = renovarSessao().finally(() => {
             refreshEmAndamento = null;
           });
         }
-
-        const tokens = await refreshEmAndamento;
-        const novoAccessToken = tokens.accessToken || tokens.token;
-
-        if (!requisicaoOriginal.headers) {
-          requisicaoOriginal.headers = {};
-        }
-        requisicaoOriginal.headers.Authorization = `Bearer ${novoAccessToken}`;
-
-        return api(requisicaoOriginal);
+        await refreshEmAndamento;
+        original.headers = original.headers || {};
+        original.headers.Authorization = `Bearer ${accessToken}`;
+        return api(original);
       } catch {
+        limparAccessToken();
       }
     }
 
-    if (status === 401 && erroDeToken) {
-      limparSessaoLocal();
-      const event = new CustomEvent('auth:logout', { detail: { reason: codigo } });
-      window.dispatchEvent(event);
+    if (error.response?.status === 401 && codigo) {
+      limparAccessToken();
+      window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: codigo } }));
     }
 
     return Promise.reject(error);
@@ -116,17 +81,26 @@ api.interceptors.response.use(
 export const registrar = (dados) => api.post('/auth/registro', dados);
 export const login = (dados) => api.post('/auth/login', dados);
 export const obterPerfil = () => api.get('/auth/perfil');
-export const atualizarPerfil = (dados) => api.put('/auth/perfil', dados);
+export const logoutAtual = () => api.post('/auth/logout');
+export const logoutTodas = () => api.post('/auth/logout-todas');
+export const excluirConta = (dados) => api.delete('/auth/perfil', { data: dados });
 
 export const listarLocais = (params) => api.get('/locais', { params });
-export const obterLocal = (id, params) => api.get(`/locais/${id}`, { params });
+export const obterLocal = (id) => api.get(`/locais/${id}`);
 export const criarLocal = (dados) => api.post('/locais', dados);
-export const atualizarLocal = (id, dados) => api.put(`/locais/${id}`, dados);
-export const deletarLocal = (id) => api.delete(`/locais/${id}`);
-export const obterEstatisticas = () => api.get('/locais/estatisticas/geral');
+export const atualizarLocal = (id, dados) => api.patch(`/locais/${id}`, dados);
+export const arquivarLocal = (id) => api.delete(`/locais/${id}`);
 
-export const criarAvaliacao = (dados) => api.post('/avaliacoes', dados);
-export const listarAvaliacoes = (localId, params) => api.get(`/avaliacoes/local/${localId}`, { params });
-export const deletarAvaliacao = (id) => api.delete(`/avaliacoes/${id}`);
+export const listarAvaliacoes = (localId, params) => api.get(`/locais/${localId}/avaliacoes`, { params });
+export const criarAvaliacao = (localId, dados) => api.post(`/locais/${localId}/avaliacoes`, dados);
+export const arquivarAvaliacao = (localId, avaliacaoId) => api.delete(`/locais/${localId}/avaliacoes/${avaliacaoId}`);
+
+export const buscarEndereco = (consulta) => api.get('/geocodificacao', { params: { q: consulta } });
+export const criarDenuncia = (dados) => api.post('/denuncias', dados);
+
+export const listarFilaModeracao = (params) => api.get('/moderacao', { params });
+export const aprovarConteudo = (tipo, id) => api.post(`/moderacao/${tipo}/${id}/aprovar`);
+export const rejeitarConteudo = (tipo, id, motivo) => api.post(`/moderacao/${tipo}/${id}/rejeitar`, { motivo });
+export const listarHistoricoModeracao = (params) => api.get('/moderacao/historico', { params });
 
 export default api;

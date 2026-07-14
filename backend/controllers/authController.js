@@ -1,150 +1,116 @@
-const jwt = require('jsonwebtoken');
+const { randomBytes } = require('crypto');
 const User = require('../models/User');
+const Session = require('../models/Session');
+const AppError = require('../utils/AppError');
+const pick = require('../utils/pick');
+const { usuarioPrivadoDTO } = require('../utils/dtos');
+const {
+  COOKIE_NAME,
+  hashValue,
+  createSession,
+  rotateSession,
+  revokeAllForUser,
+  setRefreshCookie,
+  clearRefreshCookie
+} = require('../services/sessionService');
+const { recordAudit } = require('../services/auditService');
+const { withTransaction } = require('../services/transactionService');
 
-const gerarAccessToken = (id, tokenVersion) => {
-  return jwt.sign({ id, tokenVersion }, process.env.JWT_SECRET, { expiresIn: '15m' });
+const issueSession = async (usuario, req, res) => {
+  const session = await createSession(usuario, req);
+  setRefreshCookie(res, session.refreshToken);
+  return session.accessToken;
 };
 
-const gerarRefreshToken = (id, tokenVersion) => {
-  return jwt.sign({ id, tokenVersion }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '30d' });
-};
-
-const gerarSessao = (usuario) => {
-  const token = gerarAccessToken(usuario._id, usuario.tokenVersion);
-  const refreshToken = gerarRefreshToken(usuario._id, usuario.tokenVersion);
-
-  return {
-    token,
-    accessToken: token,
-    refreshToken
-  };
-};
-
-exports.registro = async (req, res, next) => {
-  try {
-    const { nome, email, senha, tipoDeficiencia, bio } = req.body;
-
-    const usuarioExistente = await User.findOne({ email });
-    if (usuarioExistente) {
-      return res.status(400).json({ mensagem: 'Email já cadastrado' });
-    }
-
-    const usuario = await User.create({ nome, email, senha, tipoDeficiencia, bio });
-    const sessao = gerarSessao(usuario);
-
-    res.status(201).json({
-      usuario,
-      ...sessao
-    });
-  } catch (error) {
-    next(error);
+exports.registro = async (req, res) => {
+  const data = pick(req.body, ['nome', 'email', 'senha', 'bio']);
+  const existing = await User.findOne({ email: data.email }).select('+email');
+  if (existing) {
+    throw new AppError(409, 'EMAIL_JA_CADASTRADO', 'Este e-mail já está cadastrado.');
   }
+  const usuario = await User.create(data);
+  const withEmail = await User.findById(usuario._id).select('+email');
+  const accessToken = await issueSession(withEmail, req, res);
+  res.status(201).json({ usuario: usuarioPrivadoDTO(withEmail), accessToken });
 };
 
-exports.login = async (req, res, next) => {
-  try {
-    const { email, senha } = req.body;
-
-    const usuario = await User.findOne({ email });
-    if (!usuario) {
-      return res.status(401).json({ mensagem: 'Email ou senha inválidos' });
-    }
-
-    const senhaCorreta = await usuario.compararSenha(senha);
-    if (!senhaCorreta) {
-      return res.status(401).json({ mensagem: 'Email ou senha inválidos' });
-    }
-
-    const sessao = gerarSessao(usuario);
-
-    res.json({
-      usuario,
-      ...sessao
-    });
-  } catch (error) {
-    next(error);
+exports.login = async (req, res) => {
+  const data = pick(req.body, ['email', 'senha']);
+  const usuario = await User.findOne({ email: data.email, excluidoEm: null }).select('+email +senha');
+  if (!usuario || !(await usuario.compararSenha(data.senha))) {
+    throw new AppError(401, 'CREDENCIAIS_INVALIDAS', 'E-mail ou senha inválidos.');
   }
+  const accessToken = await issueSession(usuario, req, res);
+  res.json({ usuario: usuarioPrivadoDTO(usuario), accessToken });
 };
 
-exports.renovarSessao = async (req, res, next) => {
-  try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(400).json({
-        mensagem: 'Refresh token é obrigatório',
-        codigo: 'REFRESH_TOKEN_NAO_FORNECIDO'
-      });
-    }
-
-    let decoded;
-    try {
-      decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-    } catch (error) {
-      if (error.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          mensagem: 'Refresh token expirado. Faça login novamente.',
-          codigo: 'REFRESH_TOKEN_EXPIRADO'
-        });
-      }
-
-      return res.status(401).json({
-        mensagem: 'Refresh token inválido.',
-        codigo: 'REFRESH_TOKEN_INVALIDO'
-      });
-    }
-
-    if (!Number.isInteger(decoded.tokenVersion)) {
-      return res.status(401).json({
-        mensagem: 'Token de sessão inválido.',
-        codigo: 'TOKEN_SESSAO_INVALIDO'
-      });
-    }
-
-    const usuario = await User.findById(decoded.id).select('tokenVersion');
-    if (!usuario) {
-      return res.status(401).json({
-        mensagem: 'Usuário não encontrado',
-        codigo: 'USUARIO_NAO_ENCONTRADO'
-      });
-    }
-
-    if (usuario.tokenVersion !== decoded.tokenVersion) {
-      return res.status(401).json({
-        mensagem: 'Sessão invalidada. Faça login novamente.',
-        codigo: 'SESSAO_INVALIDADA'
-      });
-    }
-
-    const sessao = gerarSessao(usuario);
-    return res.json(sessao);
-  } catch (error) {
-    next(error);
-  }
+exports.refresh = async (req, res) => {
+  const rotated = await rotateSession(req.cookies[COOKIE_NAME], req);
+  setRefreshCookie(res, rotated.refreshToken);
+  const usuario = await User.findById(rotated.usuario._id).select('+email');
+  res.json({ usuario: usuarioPrivadoDTO(usuario), accessToken: rotated.accessToken });
 };
 
-exports.perfil = async (req, res, next) => {
-  try {
-    const usuario = await User.findById(req.usuario.id);
-    if (!usuario) {
-      return res.status(404).json({ mensagem: 'Usuário não encontrado' });
-    }
-    res.json(usuario);
-  } catch (error) {
-    next(error);
-  }
-};
-
-exports.atualizarPerfil = async (req, res, next) => {
-  try {
-    const { nome, bio, tipoDeficiencia } = req.body;
-    const usuario = await User.findByIdAndUpdate(
-      req.usuario.id,
-      { nome, bio, tipoDeficiencia },
-      { new: true, runValidators: true }
+exports.logout = async (req, res) => {
+  const token = req.cookies[COOKIE_NAME];
+  if (token) {
+    await Session.updateOne(
+      { tokenHash: hashValue(token), revogadoEm: null },
+      { $set: { revogadoEm: new Date(), motivoRevogacao: 'logout' } }
     );
-    res.json(usuario);
-  } catch (error) {
-    next(error);
   }
+  clearRefreshCookie(res);
+  res.status(204).send();
+};
+
+exports.logoutTodas = async (req, res) => {
+  await revokeAllForUser(req.usuario._id, 'logout_todas');
+  clearRefreshCookie(res);
+  res.status(204).send();
+};
+
+exports.perfil = async (req, res) => {
+  const usuario = await User.findById(req.usuario._id).select('+email');
+  res.json({ usuario: usuarioPrivadoDTO(usuario) });
+};
+
+exports.atualizarPerfil = async (req, res) => {
+  const data = pick(req.body, ['nome', 'bio', 'avatar']);
+  const usuario = await User.findByIdAndUpdate(
+    req.usuario._id,
+    { $set: data },
+    { new: true, runValidators: true }
+  ).select('+email');
+  res.json({ usuario: usuarioPrivadoDTO(usuario) });
+};
+
+exports.excluirConta = async (req, res) => {
+  await withTransaction(async (session) => {
+    const usuario = await User.findById(req.usuario._id).select('+email +senha').session(session);
+    if (!usuario || usuario.excluidoEm) {
+      throw new AppError(404, 'USUARIO_NAO_ENCONTRADO', 'Conta não encontrada.');
+    }
+    if (req.body.confirmacao !== 'EXCLUIR' || !(await usuario.compararSenha(req.body.senha))) {
+      throw new AppError(400, 'CONFIRMACAO_INVALIDA', 'Senha ou confirmação de exclusão inválida.');
+    }
+    usuario.nome = 'Usuário removido';
+    usuario.email = `conta-excluida-${usuario.id}@invalid.local`;
+    usuario.senha = randomBytes(32).toString('hex');
+    usuario.avatar = '';
+    usuario.bio = '';
+    usuario.excluidoEm = new Date();
+    await usuario.save({ session });
+    await revokeAllForUser(usuario._id, 'conta_excluida', session);
+    await recordAudit({
+      req,
+      action: 'conta.anonimizada',
+      entityType: 'usuario',
+      entityId: usuario._id,
+      before: { excluido: false },
+      after: { excluido: true },
+      session
+    });
+  });
+  clearRefreshCookie(res);
+  res.status(204).send();
 };

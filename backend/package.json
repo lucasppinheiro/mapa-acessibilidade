@@ -1,24 +1,42 @@
 {
-  "name": "mapa-acessibilidade-backend",
+  "name": "acessamapa-backend",
   "version": "1.0.0",
-  "description": "API do Mapa de Acessibilidade Urbana",
+  "private": true,
+  "description": "API do AcessaMapa",
   "main": "server.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "check": "node scripts/check-syntax.js",
+    "lint": "npm run check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "coverage": "npm run test:coverage",
+    "migrate:v1": "node scripts/migrate-v1.js",
+    "migrate": "npm run migrate:v1",
+    "seed": "node scripts/seed.js"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.0",
-    "express-rate-limit": "^8.3.1",
-    "express-validator": "^7.2.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.5.2",
+    "express-validator": "^7.3.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.6.0"
+    "mongoose": "^8.19.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "@vitest/coverage-v8": "^3.2.4",
+    "mongodb-memory-server": "^10.2.3",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.1.4",
+    "vitest": "^3.2.4"
   }
 }

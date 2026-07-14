@@ -1,65 +1,51 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+:root { color-scheme: light; --focus: #f59e0b; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; background: #f8fafc; color: #0f172a; font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif; line-height: 1.6; }
+button, input, select, textarea, summary { font: inherit; }
+button, a, input, select, textarea, summary { scroll-margin: 6rem; }
+:focus-visible { outline: 3px solid var(--focus) !important; outline-offset: 3px !important; }
+
+.skip-link { position: fixed; left: 1rem; top: 0; z-index: 2000; transform: translateY(-150%); border-radius: 0 0 .5rem .5rem; background: #fff; color: #172554; font-weight: 700; padding: .75rem 1rem; box-shadow: 0 2px 8px rgb(15 23 42 / 30%); }
+.skip-link:focus { transform: translateY(0); }
+
+@layer components {
+  .card { @apply rounded-xl border border-slate-300 bg-white p-5 shadow-sm; }
+  .label { @apply mb-1 block text-sm font-semibold text-slate-800; }
+  .input { @apply min-h-11 w-full rounded-lg border border-slate-400 bg-white px-3 py-2 text-slate-950 placeholder:text-slate-500; }
+  .input[aria-invalid="true"] { @apply border-2 border-red-700; }
+  .button-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-900 px-4 py-2 font-semibold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-60; }
+  .button-secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-500 bg-white px-4 py-2 font-semibold text-slate-900 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60; }
+  .button-danger { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red-800 px-4 py-2 font-semibold text-white hover:bg-red-950 disabled:cursor-not-allowed disabled:opacity-60; }
+  .button-quiet { @apply inline-flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 font-semibold text-blue-900 underline hover:bg-blue-50; }
+  .nav-link { @apply inline-flex min-h-11 items-center gap-2 rounded-md px-3 py-2 font-medium text-white hover:bg-blue-800; }
+  .nav-link-active { @apply bg-white font-bold text-blue-950 hover:bg-slate-100; }
+  .view-toggle { @apply inline-flex min-h-11 items-center gap-2 rounded-md px-4 py-2 font-semibold text-slate-700; }
+  .view-toggle-active { @apply bg-blue-900 text-white; }
+  .mode-button { @apply min-h-11 rounded-md px-3 py-2 font-semibold text-slate-700; }
+  .mode-button-active { @apply bg-white text-blue-900 shadow-sm; }
 }
 
-body {
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  line-height: 1.6;
-  color: #1f2937;
-  background-color: #f9fafb;
-}
-
-*:focus-visible {
-  outline: 3px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  background: #2563eb;
-  color: white;
-  padding: 8px 16px;
-  z-index: 100;
-  transition: top 0.3s;
-}
-.skip-link:focus {
-  top: 0;
-}
-
-.leaflet-container {
-  height: 100%;
-  width: 100%;
-  border-radius: 0.75rem;
-}
-
-.nota-1 { background-color: #dc2626; }
-.nota-2 { background-color: #ea580c; }
-.nota-3 { background-color: #d97706; }
-.nota-4 { background-color: #65a30d; }
-.nota-5 { background-color: #16a34a; }
-
-.star-rating button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.5rem;
-  padding: 0 2px;
-  transition: transform 0.1s;
-}
-.star-rating button:hover {
-  transform: scale(1.2);
-}
+.leaflet-container { height: 100%; width: 100%; background: #e2e8f0; }
+.leaflet-marker-icon:focus { outline: 4px solid var(--focus) !important; outline-offset: 3px; }
+.map-marker { align-items: center; border: 3px solid #fff; border-radius: 9999px; box-shadow: 0 2px 7px rgb(15 23 42 / 45%); color: #fff; display: flex; font-size: .8rem; font-weight: 800; height: 34px; justify-content: center; width: 34px; }
+.rating-option { align-items: center; cursor: pointer; display: inline-flex; justify-content: center; min-height: 44px; min-width: 44px; position: relative; }
+.rating-option input { height: 1px; opacity: 0; position: absolute; width: 1px; }
+.rating-option span[aria-hidden="true"] { color: #64748b; font-size: 1.75rem; padding: .35rem; }
+.rating-option input:checked + span { color: #b45309; }
+.rating-option input:focus-visible + span { border-radius: .25rem; outline: 3px solid var(--focus); outline-offset: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight !important; }
+  .button-primary, .button-danger, .view-toggle-active, .nav-link-active { border: 2px solid ButtonText; forced-color-adjust: auto; }
+  .map-marker { border-color: CanvasText; forced-color-adjust: none; }
+  .rating-option input:checked + span { color: Highlight; }
 }

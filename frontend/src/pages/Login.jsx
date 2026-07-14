@@ -1,156 +1,105 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { FiLogIn } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
+import InlineError from '../components/InlineError';
 import { useAuth } from '../context/useAuth';
-import { Link, useNavigate } from 'react-router-dom';
-import { TIPOS_DEFICIENCIA } from '../constants';
-import toast from 'react-hot-toast';
-import { FiMail, FiLock, FiUser, FiLogIn } from 'react-icons/fi';
+import { extrairMensagemErro } from '../services/api';
+import { errosDeCampos } from '../utils/domain';
+
+const validar = (form, modo) => {
+  const erros = {};
+  if (modo === 'registro' && form.nome.trim().length < 2) erros.nome = 'Informe um nome com pelo menos 2 caracteres.';
+  if (!/^\S+@\S+\.\S+$/.test(form.email)) erros.email = 'Informe um e-mail válido.';
+  if (form.senha.length < 8 || form.senha.length > 128) erros.senha = 'A senha deve ter entre 8 e 128 caracteres.';
+  else if (modo === 'registro' && !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.senha)) erros.senha = 'Use pelo menos uma letra maiúscula, uma minúscula e um número.';
+  return erros;
+};
 
 export default function Login() {
   const [modo, setModo] = useState('login');
-  const [form, setForm] = useState({ nome: '', email: '', senha: '', tipoDeficiencia: 'nenhuma' });
+  const [form, setForm] = useState({ nome: '', email: '', senha: '' });
+  const [erros, setErros] = useState({});
+  const [erroGeral, setErroGeral] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const formularioRef = useRef(null);
   const { login, registrar } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setCarregando(true);
+  const mudarModo = (novoModo) => {
+    setModo(novoModo);
+    setErros({});
+    setErroGeral('');
+  };
 
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const novosErros = validar(form, modo);
+    setErros(novosErros);
+    setErroGeral('');
+    if (Object.keys(novosErros).length) {
+      requestAnimationFrame(() => formularioRef.current?.querySelector('[aria-invalid="true"]')?.focus());
+      return;
+    }
+
+    setCarregando(true);
     try {
-      if (modo === 'login') {
-        await login(form.email, form.senha);
-        toast.success('Login realizado com sucesso!');
-      } else {
-        await registrar(form);
-        toast.success('Conta criada com sucesso!');
-      }
+      if (modo === 'login') await login(form.email, form.senha);
+      else await registrar(form);
       navigate('/');
     } catch (error) {
-      toast.error(error.response?.data?.mensagem || 'Erro ao processar. Tente novamente.');
+      const errosApi = errosDeCampos(error);
+      if (Object.keys(errosApi).length) {
+        setErros(errosApi);
+        requestAnimationFrame(() => formularioRef.current?.querySelector('[aria-invalid="true"]')?.focus());
+      } else {
+        setErroGeral(extrairMensagemErro(error, 'Não foi possível autenticar. Confira os dados e tente novamente.'));
+      }
     } finally {
       setCarregando(false);
     }
   };
 
+  const campo = (nome, valor) => setForm((atual) => ({ ...atual, [nome]: valor }));
+
   return (
-    <main className="min-h-[calc(100vh-64px)] flex items-center justify-center bg-gray-50 px-4 py-8">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {modo === 'login' ? 'Entrar' : 'Criar Conta'}
-          </h1>
-          <p className="text-gray-600">
-            {modo === 'login'
-              ? 'Acesse sua conta para contribuir com o mapa'
-              : 'Junte-se à comunidade e ajude a mapear a acessibilidade'
-            }
-          </p>
+    <main id="conteudo-principal" tabIndex="-1" aria-labelledby="titulo-pagina" className="min-h-[calc(100vh-4rem)] bg-slate-50 px-4 py-10">
+      <div className="mx-auto max-w-md">
+        <h1 id="titulo-pagina" className="text-3xl font-bold text-slate-950">{modo === 'login' ? 'Entrar' : 'Criar conta'}</h1>
+        <p className="mt-2 text-slate-700">
+          {modo === 'login' ? 'Entre para cadastrar e avaliar locais.' : 'Crie uma conta sem informar dados sobre deficiência.'}
+        </p>
+
+        <div className="mt-6 grid grid-cols-2 rounded-lg border border-slate-300 bg-slate-100 p-1" aria-label="Escolha do formulário">
+          <button type="button" className={`mode-button ${modo === 'login' ? 'mode-button-active' : ''}`} aria-pressed={modo === 'login'} onClick={() => mudarModo('login')}>Entrar</button>
+          <button type="button" className={`mode-button ${modo === 'registro' ? 'mode-button-active' : ''}`} aria-pressed={modo === 'registro'} onClick={() => mudarModo('registro')}>Criar conta</button>
         </div>
 
-        <div className="flex mb-6 bg-gray-100 rounded-lg p-1" role="tablist">
-          <button
-            role="tab"
-            aria-selected={modo === 'login'}
-            onClick={() => setModo('login')}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors
-              ${modo === 'login' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Entrar
-          </button>
-          <button
-            role="tab"
-            aria-selected={modo === 'registro'}
-            onClick={() => setModo('registro')}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors
-              ${modo === 'registro' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Criar Conta
-          </button>
-        </div>
+        <form ref={formularioRef} noValidate onSubmit={handleSubmit} className="card mt-4 space-y-4">
+          {erroGeral && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">{erroGeral}</p>}
 
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
           {modo === 'registro' && (
             <div>
-              <label htmlFor="nome" className="block text-sm font-medium text-gray-700 mb-1">
-                Nome completo
-              </label>
-              <div className="relative">
-                <FiUser className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-                <input
-                  id="nome"
-                  type="text"
-                  required
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Seu nome"
-                />
-              </div>
+              <label htmlFor="nome" className="label">Nome</label>
+              <input id="nome" name="nome" required autoComplete="name" className="input" value={form.nome} onChange={(event) => campo('nome', event.target.value)} aria-invalid={Boolean(erros.nome)} aria-describedby={erros.nome ? 'erro-nome' : undefined} />
+              <InlineError id="erro-nome">{erros.nome}</InlineError>
             </div>
           )}
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <div className="relative">
-              <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-              <input
-                id="email"
-                type="email"
-                required
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="seu@email.com"
-              />
-            </div>
+            <label htmlFor="email" className="label">E-mail</label>
+            <input id="email" name="email" type="email" required autoComplete="email" className="input" value={form.email} onChange={(event) => campo('email', event.target.value)} aria-invalid={Boolean(erros.email)} aria-describedby={erros.email ? 'erro-email' : undefined} />
+            <InlineError id="erro-email">{erros.email}</InlineError>
           </div>
 
           <div>
-            <label htmlFor="senha" className="block text-sm font-medium text-gray-700 mb-1">
-              Senha
-            </label>
-            <div className="relative">
-              <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-              <input
-                id="senha"
-                type="password"
-                required
-                minLength={8}
-                value={form.senha}
-                onChange={(e) => setForm({ ...form, senha: e.target.value })}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Mínimo 8 caracteres"
-              />
-            </div>
+            <label htmlFor="senha" className="label">Senha</label>
+            <input id="senha" name="senha" type="password" required minLength="8" maxLength="128" autoComplete={modo === 'login' ? 'current-password' : 'new-password'} className="input" value={form.senha} onChange={(event) => campo('senha', event.target.value)} aria-invalid={Boolean(erros.senha)} aria-describedby="ajuda-senha erro-senha" />
+            <p id="ajuda-senha" className="mt-1 text-sm text-slate-600">Use de 8 a 128 caracteres; no cadastro, inclua maiúscula, minúscula e número.</p>
+            <InlineError id="erro-senha">{erros.senha}</InlineError>
           </div>
 
-          {modo === 'registro' && (
-            <div>
-              <label htmlFor="tipoDeficiencia" className="block text-sm font-medium text-gray-700 mb-1">
-                Tipo de deficiência (opcional)
-              </label>
-              <select
-                id="tipoDeficiencia"
-                value={form.tipoDeficiencia}
-                onChange={(e) => setForm({ ...form, tipoDeficiencia: e.target.value })}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {Object.entries(TIPOS_DEFICIENCIA).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={carregando}
-            className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <FiLogIn aria-hidden="true" />
-            {carregando ? 'Processando...' : modo === 'login' ? 'Entrar' : 'Criar Conta'}
+          <button type="submit" className="button-primary w-full" disabled={carregando}>
+            <FiLogIn aria-hidden="true" /> {carregando ? 'Processando...' : (modo === 'login' ? 'Entrar' : 'Criar conta')}
           </button>
         </form>
       </div>

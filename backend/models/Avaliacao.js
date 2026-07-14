@@ -1,48 +1,29 @@
 const mongoose = require('mongoose');
+const { RESOURCE_KEYS, RESOURCE_STATES, CONTENT_STATUSES } = require('../constants/domain');
+
+const observationDefinition = RESOURCE_KEYS.reduce((fields, key) => {
+  fields[key] = { type: String, enum: RESOURCE_STATES, default: 'desconhecido' };
+  return fields;
+}, {});
 
 const avaliacaoSchema = new mongoose.Schema({
-  local: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Local',
-    required: true
+  origemSinteticaId: { type: String, unique: true, sparse: true, select: false },
+  local: { type: mongoose.Schema.Types.ObjectId, ref: 'Local', required: true, index: true },
+  autor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  nota: { type: Number, required: true, min: 1, max: 5 },
+  comentario: { type: String, required: true, trim: true, maxlength: 1000 },
+  observacoesRecursos: {
+    type: new mongoose.Schema(observationDefinition, { _id: false }),
+    default: () => ({})
   },
-  autor: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  nota: {
-    type: Number,
-    required: [true, 'Nota é obrigatória'],
-    min: 1,
-    max: 5
-  },
-  comentario: {
-    type: String,
-    required: [true, 'Comentário é obrigatório'],
-    maxlength: 1000
-  },
-  recursosConfirmados: {
-    rampa: { type: Boolean, default: false },
-    elevador: { type: Boolean, default: false },
-    banheiroAcessivel: { type: Boolean, default: false },
-    pisoTatil: { type: Boolean, default: false },
-    sinalizacaoBraile: { type: Boolean, default: false },
-    estacionamentoAcessivel: { type: Boolean, default: false },
-    portaLarga: { type: Boolean, default: false },
-    libras: { type: Boolean, default: false },
-    audioDescricao: { type: Boolean, default: false },
-    caoPermitido: { type: Boolean, default: false }
-  },
-  tipoDeficiencia: {
-    type: String,
-    enum: ['visual', 'auditiva', 'motora', 'cognitiva', 'multipla', 'outra', 'nenhuma'],
-    default: 'nenhuma'
-  }
-}, {
-  timestamps: true
-});
+  status: { type: String, enum: CONTENT_STATUSES, default: 'pendente', index: true },
+  motivoRejeicao: { type: String, default: null, maxlength: 500 },
+  moderadoPor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  moderadoEm: { type: Date, default: null },
+  arquivadoEm: { type: Date, default: null }
+}, { timestamps: true });
 
 avaliacaoSchema.index({ local: 1, autor: 1 }, { unique: true });
+avaliacaoSchema.index({ local: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Avaliacao', avaliacaoSchema);

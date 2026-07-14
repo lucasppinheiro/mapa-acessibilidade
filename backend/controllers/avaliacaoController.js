@@ -1,92 +1,99 @@
-const Avaliacao = require('../models/Avaliacao');
 const Local = require('../models/Local');
+const Avaliacao = require('../models/Avaliacao');
+const AppError = require('../utils/AppError');
+const pick = require('../utils/pick');
+const { RESOURCE_KEYS } = require('../constants/domain');
+const { avaliacaoDTO } = require('../utils/dtos');
+const { recordAudit } = require('../services/auditService');
 const { recalcularMedia } = require('../utils/calcularMedia');
+const { withTransaction } = require('../services/transactionService');
 
-exports.criarAvaliacao = async (req, res, next) => {
-  try {
-    const { local, nota, comentario, recursosConfirmados, tipoDeficiencia } = req.body;
+const observationsDTO = (observations = {}) => RESOURCE_KEYS.reduce((result, key) => {
+  result[key] = observations[key] || 'desconhecido';
+  return result;
+}, {});
 
-    const localExiste = await Local.findById(local);
-    if (!localExiste) {
-      return res.status(404).json({ mensagem: 'Local não encontrado' });
-    }
-
-    const avaliacaoExistente = await Avaliacao.findOne({ local, autor: req.usuario.id });
-    if (avaliacaoExistente) {
-      return res.status(400).json({ mensagem: 'Você já avaliou este local' });
-    }
-
-    const avaliacao = await Avaliacao.create({
-      local,
-      autor: req.usuario.id,
-      nota,
-      comentario,
-      recursosConfirmados,
-      tipoDeficiencia
-    });
-
-    await avaliacao.populate('autor', 'nome tipoDeficiencia');
-    await recalcularMedia(local);
-
-    res.status(201).json(avaliacao);
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(400).json({ mensagem: 'Você já avaliou este local' });
-    }
-    next(error);
-  }
+const pagination = (query) => {
+  const pagina = Math.max(1, Number.parseInt(query.pagina || query.page, 10) || 1);
+  const limite = Math.min(50, Math.max(1, Number.parseInt(query.limite || query.limit, 10) || 10));
+  return { pagina, limite, skip: (pagina - 1) * limite };
 };
 
-exports.listarAvaliacoes = async (req, res, next) => {
-  try {
-    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
-    const skip = (pageNum - 1) * limitNum;
-
-    const [avaliacoes, total] = await Promise.all([
-      Avaliacao.find({ local: req.params.localId })
-        .populate('autor', 'nome tipoDeficiencia')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum),
-      Avaliacao.countDocuments({ local: req.params.localId })
-    ]);
-
-    const totalPaginas = Math.ceil(total / limitNum);
-
-    res.json({
-      avaliacoes,
-      paginacao: {
-        pagina: pageNum,
-        limite: limitNum,
-        total,
-        paginas: totalPaginas,
-        temProximaPagina: pageNum < totalPaginas
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
+exports.listarAvaliacoes = async (req, res) => {
+  const localExists = await Local.exists({ _id: req.params.localId, status: 'aprovado' });
+  if (!localExists) throw new AppError(404, 'LOCAL_NAO_ENCONTRADO', 'Local não encontrado.');
+  const { pagina, limite, skip } = pagination(req.query);
+  const filter = { local: req.params.localId, status: 'aprovado' };
+  const [reviews, total] = await Promise.all([
+    Avaliacao.find(filter)
+      .populate('autor', 'nome avatar bio')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limite),
+    Avaliacao.countDocuments(filter)
+  ]);
+  res.json({
+    avaliacoes: reviews.map(avaliacaoDTO),
+    paginacao: {
+      pagina,
+      limite,
+      total,
+      totalPaginas: Math.ceil(total / limite),
+      temProximaPagina: pagina * limite < total
+    }
+  });
 };
 
-exports.deletarAvaliacao = async (req, res, next) => {
-  try {
-    const avaliacao = await Avaliacao.findById(req.params.id);
-
-    if (!avaliacao) {
-      return res.status(404).json({ mensagem: 'Avaliação não encontrada' });
-    }
-
-    if (avaliacao.autor.toString() !== req.usuario.id) {
-      return res.status(403).json({ mensagem: 'Não autorizado' });
-    }
-
-    const localId = avaliacao.local;
-    await Avaliacao.findByIdAndDelete(req.params.id);
-    await recalcularMedia(localId);
-
-    res.json({ mensagem: 'Avaliação removida com sucesso' });
-  } catch (error) {
-    next(error);
+exports.criarAvaliacao = async (req, res) => {
+  const local = await Local.findOne({ _id: req.params.localId, status: 'aprovado' });
+  if (!local) throw new AppError(404, 'LOCAL_NAO_ENCONTRADO', 'Local não encontrado.');
+  const existing = await Avaliacao.exists({ local: local._id, autor: req.usuario._id });
+  if (existing) {
+    throw new AppError(409, 'AVALIACAO_JA_EXISTE', 'Você já enviou uma avaliação para este local.');
   }
+  const data = pick(req.body, ['nota', 'comentario']);
+  data.observacoesRecursos = observationsDTO(req.body.observacoesRecursos);
+  const review = await Avaliacao.create({
+    ...data,
+    local: local._id,
+    autor: req.usuario._id,
+    status: 'pendente'
+  });
+  await review.populate('autor', 'nome avatar bio');
+  await recordAudit({
+    req,
+    action: 'avaliacao.criada',
+    entityType: 'avaliacao',
+    entityId: review._id,
+    after: { status: 'pendente', localId: String(local._id) }
+  });
+  res.status(202).json({ id: review.id, status: 'pendente', mensagem: 'Avaliação enviada para moderação.' });
+};
+
+exports.arquivarAvaliacao = async (req, res) => {
+  await withTransaction(async (session) => {
+    const review = await Avaliacao.findOne({ _id: req.params.avaliacaoId, local: req.params.localId }).session(session);
+    if (!review || review.status === 'arquivado') {
+      throw new AppError(404, 'AVALIACAO_NAO_ENCONTRADA', 'Avaliação não encontrada.');
+    }
+    const privileged = ['moderador', 'admin'].includes(req.usuario.papel);
+    if (!privileged && String(review.autor) !== req.usuario.id) {
+      throw new AppError(403, 'PERMISSAO_NEGADA', 'Somente o autor ou a moderação pode arquivar esta avaliação.');
+    }
+    const previousStatus = review.status;
+    review.status = 'arquivado';
+    review.arquivadoEm = new Date();
+    await review.save({ session });
+    if (previousStatus === 'aprovado') await recalcularMedia(review.local, session);
+    await recordAudit({
+      req,
+      action: 'avaliacao.arquivada',
+      entityType: 'avaliacao',
+      entityId: review._id,
+      before: { status: previousStatus },
+      after: { status: 'arquivado' },
+      session
+    });
+  });
+  res.status(204).send();
 };

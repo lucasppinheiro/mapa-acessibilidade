@@ -1,26 +1,57 @@
-import { FiStar } from 'react-icons/fi';
 import { FaStar } from 'react-icons/fa';
+import { FiStar } from 'react-icons/fi';
 
-export default function StarRating({ nota, onChange, tamanho = 'text-xl', somenteLeitura = false }) {
+export default function StarRating({
+  nota,
+  onChange,
+  tamanho = 'text-xl',
+  somenteLeitura = false,
+  nome = 'nota',
+  legenda = 'Nota de acessibilidade',
+  erroId,
+  obrigatorio = false
+}) {
+  const notaNumerica = Number(nota);
+
+  if (somenteLeitura) {
+    if (nota === null || nota === undefined || nota === '' || !Number.isFinite(notaNumerica)) {
+      return <span className="text-sm font-medium text-slate-600">Ainda não avaliado</span>;
+    }
+
+    return (
+      <span className="inline-flex items-center gap-2" aria-label={`${notaNumerica.toFixed(1)} de 5 estrelas`}>
+        <span className="flex gap-0.5" aria-hidden="true">
+          {[1, 2, 3, 4, 5].map((estrela) => (
+            estrela <= Math.round(notaNumerica)
+              ? <FaStar key={estrela} className={`${tamanho} text-amber-600`} />
+              : <FiStar key={estrela} className={`${tamanho} text-slate-400`} />
+          ))}
+        </span>
+        <span className="text-sm font-semibold text-slate-800">{notaNumerica.toFixed(1)}</span>
+      </span>
+    );
+  }
+
   return (
-    <div className="star-rating flex items-center gap-1" role="group" aria-label={`Avaliação: ${nota} de 5 estrelas`}>
-      {[1, 2, 3, 4, 5].map((estrela) => (
-        somenteLeitura ? (
-          <span key={estrela} className={`${tamanho} ${estrela <= nota ? 'text-yellow-500' : 'text-gray-300'}`} aria-hidden="true">
-            {estrela <= nota ? <FaStar /> : <FiStar />}
-          </span>
-        ) : (
-          <button
-            key={estrela}
-            type="button"
-            onClick={() => onChange(estrela)}
-            className={`${tamanho} ${estrela <= nota ? 'text-yellow-500' : 'text-gray-300'} hover:text-yellow-400 transition-colors bg-transparent border-none cursor-pointer`}
-            aria-label={`${estrela} estrela${estrela > 1 ? 's' : ''}`}
-          >
-            {estrela <= nota ? <FaStar /> : <FiStar />}
-          </button>
-        )
-      ))}
-    </div>
+    <fieldset className="min-w-0" aria-describedby={erroId}>
+      <legend className="mb-2 text-sm font-medium text-slate-800">{legenda}</legend>
+      <div className="flex flex-wrap gap-2">
+        {[1, 2, 3, 4, 5].map((estrela) => (
+          <label key={estrela} className="rating-option">
+            <input
+              type="radio"
+              name={nome}
+              value={estrela}
+              checked={notaNumerica === estrela}
+              onChange={() => onChange(estrela)}
+              required={obrigatorio}
+              aria-describedby={estrela === 1 ? erroId : undefined}
+            />
+            <span aria-hidden="true"><FaStar /></span>
+            <span className="sr-only">{estrela} {estrela === 1 ? 'estrela' : 'estrelas'}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
