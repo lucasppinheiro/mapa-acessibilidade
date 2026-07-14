@@ -1,28 +1,36 @@
-# AcessaMapa - Frontend
+# AcessaMapa — frontend
 
-Interface do AcessaMapa. Mapa interativo pra visualizar e cadastrar locais acessíveis.
+Interface React da demonstração AcessaMapa v1. O estudo de caso, a arquitetura e as limitações estão documentados no README da raiz do repositório.
 
-## Stack
+## Jornadas
 
-- React 19 + Vite 7
-- Tailwind CSS v4
-- Leaflet / React-Leaflet
-- React Router v7
-- Axios
+- consulta por lista textual em todos os tamanhos de tela;
+- mapa opcional, com as mesmas rotas de detalhes da lista;
+- busca e filtros paginados;
+- cadastro com busca explícita de endereço, coordenadas editáveis e geolocalização opcional;
+- avaliações com nota em rádios nativos e observações tri-state dos recursos;
+- denúncia, conta, privacidade e fila de moderação.
 
-## Páginas
+O cliente usa `/api/v1` na mesma origem. O access token permanece apenas em memória; a renovação usa cookie `HttpOnly` gerenciado pelo backend.
 
-- **Home** — mapa + sidebar com filtros e busca
-- **Login** — login / registro
-- **Novo Local** — form com seleção no mapa
-- **Detalhes** — info do local, recursos e avaliações
-- **Estatísticas** — dashboard geral
-
-## Rodando
+## Desenvolvimento
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Roda em `http://localhost:5173`. Proxy do Vite redireciona `/api` pra `http://localhost:5000`.
+O proxy do Vite encaminha `/api` para `http://localhost:5000` somente no desenvolvimento.
+
+## Validação
+
+```bash
+npm run lint
+npm test
+npm run coverage
+npm run build
+npx playwright install chromium
+npm run e2e
+```
+
+Vitest, Testing Library e axe cobrem componentes e jornadas. Playwright executa smoke tests com dados sintéticos. Os testes automatizados não substituem a validação manual com teclado, leitor de tela, zoom, contraste e diferentes larguras de viewport; portanto, este projeto não declara conformidade WCAG.

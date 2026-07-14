@@ -1,67 +1,65 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Session = require('../models/Session');
+const AppError = require('../utils/AppError');
+const { getConfig } = require('../config/env');
 
-const auth = async (req, res, next) => {
+const auth = async (req, _res, next) => {
   try {
-    let token;
-
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
+    const authorization = req.get('authorization') || '';
+    const [scheme, token] = authorization.split(' ');
+    if (scheme !== 'Bearer' || !token) {
+      throw new AppError(401, 'TOKEN_NAO_FORNECIDO', 'Faça login para continuar.');
     }
 
-    if (!token) {
-      return res.status(401).json({
-        mensagem: 'Acesso não autorizado. Token não fornecido.',
-        codigo: 'TOKEN_NAO_FORNECIDO'
+    let payload;
+    try {
+      payload = jwt.verify(token, getConfig().accessTokenSecret, {
+        algorithms: ['HS256'],
+        issuer: 'acessamapa-api',
+        audience: 'acessamapa-web'
       });
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        throw new AppError(401, 'TOKEN_EXPIRADO', 'Sua sessão expirou. Renove o acesso.');
+      }
+      throw new AppError(401, 'TOKEN_INVALIDO', 'O token de acesso é inválido.');
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!Number.isInteger(decoded.tokenVersion)) {
-      return res.status(401).json({
-        mensagem: 'Token de sessão inválido.',
-        codigo: 'TOKEN_SESSAO_INVALIDO'
-      });
+    if (!payload.sub || payload.tipo !== 'access') {
+      throw new AppError(401, 'TOKEN_INVALIDO', 'O token de acesso é inválido.');
     }
 
-    const usuario = await User.findById(decoded.id).select('-senha tokenVersion');
-
+    const [usuario, session] = await Promise.all([
+      User.findOne({ _id: payload.sub, excluidoEm: null }),
+      Session.findOne({
+        _id: payload.sid,
+        usuario: payload.sub,
+        revogadoEm: null,
+        expiraEm: { $gt: new Date() }
+      }).select('_id')
+    ]);
     if (!usuario) {
-      return res.status(401).json({
-        mensagem: 'Usuário não encontrado',
-        codigo: 'USUARIO_NAO_ENCONTRADO'
-      });
+      throw new AppError(401, 'USUARIO_INATIVO', 'A conta não está disponível.');
     }
-
-    if (usuario.tokenVersion !== decoded.tokenVersion) {
-      return res.status(401).json({
-        mensagem: 'Sessão invalidada. Faça login novamente.',
-        codigo: 'SESSAO_INVALIDADA'
-      });
+    if (!session) {
+      throw new AppError(401, 'SESSAO_REVOGADA', 'A sessão foi encerrada. Faça login novamente.');
     }
 
     req.usuario = usuario;
+    req.sessionId = payload.sid;
     next();
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        mensagem: 'Token expirado. Faça login novamente.',
-        codigo: 'TOKEN_EXPIRADO'
-      });
-    }
-
-    if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
-      return res.status(401).json({
-        mensagem: 'Token inválido.',
-        codigo: 'TOKEN_INVALIDO'
-      });
-    }
-
-    return res.status(401).json({
-      mensagem: 'Falha de autenticação.',
-      codigo: 'FALHA_AUTENTICACAO'
-    });
+    next(error);
   }
 };
 
+const authorize = (...roles) => (req, _res, next) => {
+  if (!req.usuario || !roles.includes(req.usuario.papel)) {
+    return next(new AppError(403, 'PERMISSAO_NEGADA', 'Você não tem permissão para esta ação.'));
+  }
+  next();
+};
+
 module.exports = auth;
+module.exports.authorize = authorize;

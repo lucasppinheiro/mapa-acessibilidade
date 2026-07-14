@@ -1,0 +1,1371 @@
+openapi: 3.1.0
+info:
+  title: API AcessaMapa
+  version: 1.0.0
+  summary: API pública e moderada para informações de acessibilidade urbana.
+  description: |
+    Contrato da v1. Respostas públicas usam DTOs explícitos e não incluem e-mail,
+    credenciais, dados de deficiência ou campos internos de governança. Novas
+    contribuições entram em moderação quando `DEMO_WRITE_MODE=moderated`.
+servers:
+  - url: /api/v1
+    description: Mesma origem da aplicação
+tags:
+  - name: Saúde
+    description: Sinais de liveness e readiness para operação.
+  - name: Autenticação
+    description: Registro, sessão rotativa, perfil e exclusão de conta.
+  - name: Locais
+    description: Consulta pública e contribuições de locais.
+  - name: Avaliações
+    description: Avaliações e observações de recursos moderadas.
+  - name: Geocodificação
+    description: Busca explícita de endereço por provedor configurável.
+  - name: Denúncias
+    description: Sinalização comunitária de conteúdo para análise.
+  - name: Moderação
+    description: Fila, decisões e histórico restritos a papéis autorizados.
+paths:
+  /health/live:
+    get:
+      tags: [Saúde]
+      summary: Verifica se o processo está ativo
+      operationId: healthLive
+      security: []
+      responses:
+        "200":
+          description: Processo ativo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthLive"
+  /health/ready:
+    get:
+      tags: [Saúde]
+      summary: Verifica se a aplicação pode receber tráfego
+      operationId: healthReady
+      security: []
+      responses:
+        "200":
+          description: Aplicação pronta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthReady"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /auth/registro:
+    post:
+      tags: [Autenticação]
+      summary: Registra uma conta
+      operationId: registrarUsuario
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistroInput"
+      responses:
+        "201":
+          description: Conta criada e sessão iniciada. O refresh token é enviado em cookie HttpOnly.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/RefreshCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/login:
+    post:
+      tags: [Autenticação]
+      summary: Inicia uma sessão
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Sessão iniciada. O access token deve ser mantido apenas em memória.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/RefreshCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /auth/refresh:
+    post:
+      tags: [Autenticação]
+      summary: Rotaciona o refresh token e emite novo access token
+      operationId: renovarSessao
+      security:
+        - refreshCookie: []
+      responses:
+        "200":
+          description: Sessão renovada e cookie rotacionado.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/RefreshCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/logout:
+    post:
+      tags: [Autenticação]
+      summary: Encerra a sessão atual
+      operationId: logout
+      security:
+        - refreshCookie: []
+      responses:
+        "204":
+          description: Sessão revogada e cookie removido.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/ClearedRefreshCookie"
+  /auth/logout-todas:
+    post:
+      tags: [Autenticação]
+      summary: Encerra todas as sessões da conta
+      operationId: logoutTodas
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Todas as sessões foram revogadas e o cookie atual foi removido.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/ClearedRefreshCookie"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/perfil:
+    get:
+      tags: [Autenticação]
+      summary: Consulta o perfil da conta autenticada
+      operationId: obterPerfil
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Perfil privado da própria conta. O e-mail nunca é usado em DTOs públicos.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [usuario]
+                properties:
+                  usuario:
+                    $ref: "#/components/schemas/UsuarioPrivado"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Autenticação]
+      summary: Atualiza campos permitidos do perfil
+      operationId: atualizarPerfil
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PerfilPatchInput"
+      responses:
+        "200":
+          description: Perfil atualizado.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [usuario]
+                properties:
+                  usuario:
+                    $ref: "#/components/schemas/UsuarioPrivado"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags: [Autenticação]
+      summary: Exclui a conta e anonimiza suas contribuições
+      operationId: excluirConta
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [senha, confirmacao]
+              properties:
+                senha:
+                  type: string
+                  format: password
+                  minLength: 8
+                  writeOnly: true
+                confirmacao:
+                  type: string
+                  const: EXCLUIR
+      responses:
+        "204":
+          description: Conta excluída, sessões revogadas e contribuições anonimizadas.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /locais:
+    get:
+      tags: [Locais]
+      summary: Lista locais aprovados
+      operationId: listarLocais
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Pagina"
+        - $ref: "#/components/parameters/Limite"
+        - name: busca
+          in: query
+          description: Busca textual por nome ou endereço.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: categoria
+          in: query
+          schema:
+            $ref: "#/components/schemas/Categoria"
+        - name: recurso
+          in: query
+          schema:
+            $ref: "#/components/schemas/ChaveRecurso"
+        - name: estadoRecurso
+          in: query
+          schema:
+            $ref: "#/components/schemas/EstadoRecurso"
+        - name: oeste
+          in: query
+          description: Longitude mínima do viewport.
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+        - name: sul
+          in: query
+          description: Latitude mínima do viewport.
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+        - name: leste
+          in: query
+          description: Longitude máxima do viewport.
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+        - name: norte
+          in: query
+          description: Latitude máxima do viewport.
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+      responses:
+        "200":
+          description: Página de locais aprovados.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocaisEnvelope"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    post:
+      tags: [Locais]
+      summary: Envia um novo local para moderação
+      operationId: criarLocal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalInput"
+      responses:
+        "202":
+          description: Local recebido como pendente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContribuicaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WriteDisabled"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /locais/{localId}:
+    parameters:
+      - $ref: "#/components/parameters/LocalId"
+    get:
+      tags: [Locais]
+      summary: Consulta um local aprovado
+      operationId: obterLocal
+      security: []
+      responses:
+        "200":
+          description: Local aprovado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Locais]
+      summary: Propõe alteração em um local
+      description: Alterações materiais em conteúdo aprovado retornam à moderação.
+      operationId: editarLocal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalPatchInput"
+      responses:
+        "202":
+          description: Alteração recebida e, quando material, marcada como pendente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContribuicaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags: [Locais]
+      summary: Arquiva um local
+      operationId: arquivarLocal
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Local arquivado logicamente; histórico preservado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /locais/{localId}/avaliacoes:
+    parameters:
+      - $ref: "#/components/parameters/LocalId"
+    get:
+      tags: [Avaliações]
+      summary: Lista avaliações aprovadas de um local
+      operationId: listarAvaliacoes
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Pagina"
+        - $ref: "#/components/parameters/Limite"
+      responses:
+        "200":
+          description: Avaliações aprovadas.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvaliacoesEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Avaliações]
+      summary: Envia uma avaliação para moderação
+      operationId: criarAvaliacao
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AvaliacaoInput"
+      responses:
+        "202":
+          description: Avaliação recebida como pendente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContribuicaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WriteDisabled"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /locais/{localId}/avaliacoes/{avaliacaoId}:
+    parameters:
+      - $ref: "#/components/parameters/LocalId"
+      - $ref: "#/components/parameters/AvaliacaoId"
+    delete:
+      tags: [Avaliações]
+      summary: Arquiva uma avaliação
+      operationId: arquivarAvaliacao
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Avaliação arquivada logicamente; histórico preservado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /geocodificacao:
+    get:
+      tags: [Geocodificação]
+      summary: Busca um endereço após ação explícita
+      description: Não é um endpoint de autocomplete. Resultados devem ser armazenados em cache e ter atribuição ao provedor.
+      operationId: buscarEndereco
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Endereço enviado explicitamente pelo usuário.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 200
+      responses:
+        "200":
+          description: Resultados normalizados do provedor configurado.
+          headers:
+            X-Cache:
+              description: Indica se a resposta veio do cache.
+              schema:
+                type: string
+                enum: [HIT, MISS]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeocodificacaoEnvelope"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+  /denuncias:
+    post:
+      tags: [Denúncias]
+      summary: Denuncia um local ou uma avaliação
+      operationId: criarDenuncia
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DenunciaInput"
+      responses:
+        "202":
+          description: Denúncia recebida para análise.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContribuicaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WriteDisabled"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /moderacao:
+    get:
+      tags: [Moderação]
+      summary: Consulta a fila de moderação
+      operationId: listarFilaModeracao
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Pagina"
+        - $ref: "#/components/parameters/Limite"
+        - name: tipo
+          in: query
+          schema:
+            $ref: "#/components/schemas/TipoModeravel"
+      responses:
+        "200":
+          description: Fila pendente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilaModeracaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /moderacao/historico:
+    get:
+      tags: [Moderação]
+      summary: Consulta o histórico append-only de moderação
+      operationId: listarHistoricoModeracao
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Pagina"
+        - $ref: "#/components/parameters/Limite"
+        - name: entidadeTipo
+          in: query
+          schema:
+            $ref: "#/components/schemas/TipoModeravel"
+        - name: entidadeId
+          in: query
+          schema:
+            $ref: "#/components/schemas/ObjectId"
+      responses:
+        "200":
+          description: Histórico de eventos de moderação.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoricoModeracaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /moderacao/{tipo}/{id}/aprovar:
+    parameters:
+      - $ref: "#/components/parameters/TipoModeravel"
+      - $ref: "#/components/parameters/ModeracaoId"
+    post:
+      tags: [Moderação]
+      summary: Aprova conteúdo pendente
+      operationId: aprovarConteudo
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Conteúdo aprovado e evento registrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisaoModeracaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /moderacao/{tipo}/{id}/rejeitar:
+    parameters:
+      - $ref: "#/components/parameters/TipoModeravel"
+      - $ref: "#/components/parameters/ModeracaoId"
+    post:
+      tags: [Moderação]
+      summary: Rejeita conteúdo pendente com motivo
+      operationId: rejeitarConteudo
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [motivo]
+              properties:
+                motivo:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+      responses:
+        "200":
+          description: Conteúdo rejeitado e evento registrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisaoModeracaoEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token de curta duração, mantido apenas em memória no cliente.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: acessamapa_refresh
+      description: Refresh token opaco em cookie HttpOnly, Secure e SameSite=Lax.
+  headers:
+    RefreshCookie:
+      description: Cookie de refresh opaco, rotacionado e sem acesso por JavaScript.
+      schema:
+        type: string
+        example: acessamapa_refresh=opaco; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax
+    ClearedRefreshCookie:
+      description: Remoção do cookie de refresh.
+      schema:
+        type: string
+        example: acessamapa_refresh=; Path=/api/v1/auth; Max-Age=0; HttpOnly; Secure; SameSite=Lax
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limite:
+      name: limite
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    LocalId:
+      name: localId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ObjectId"
+    AvaliacaoId:
+      name: avaliacaoId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ObjectId"
+    ModeracaoId:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ObjectId"
+    TipoModeravel:
+      name: tipo
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/TipoModeravel"
+  responses:
+    ValidationError:
+      description: Dados de entrada inválidos.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    Unauthorized:
+      description: Autenticação ausente, inválida ou sessão revogada.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    Forbidden:
+      description: A conta autenticada não tem permissão para a operação.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    WriteDisabled:
+      description: Escrita desabilitada porque a demonstração está em modo somente leitura.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    NotFound:
+      description: Recurso não encontrado ou não visível para esta conta.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    Conflict:
+      description: Estado atual incompatível com a operação solicitada.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    TooManyRequests:
+      description: Limite de requisições excedido.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    UpstreamError:
+      description: O provedor externo não respondeu de forma válida.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+    ServiceUnavailable:
+      description: Dependência necessária indisponível.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErroEnvelope"
+  schemas:
+    ObjectId:
+      type: string
+      pattern: "^[a-fA-F0-9]{24}$"
+      examples: [66a111111111111111111111]
+    RequestId:
+      type: string
+      minLength: 8
+      maxLength: 128
+    ErroEnvelope:
+      type: object
+      additionalProperties: false
+      required: [erro]
+      properties:
+        erro:
+          type: object
+          additionalProperties: false
+          required: [codigo, mensagem, requestId]
+          properties:
+            codigo:
+              type: string
+              pattern: "^[A-Z0-9_]+$"
+              examples: [VALIDACAO_FALHOU]
+            mensagem:
+              type: string
+              examples: [Revise os campos informados.]
+            detalhes:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [campo, mensagem]
+                properties:
+                  campo:
+                    type: string
+                  mensagem:
+                    type: string
+            requestId:
+              $ref: "#/components/schemas/RequestId"
+    HealthLive:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: vivo
+    HealthReady:
+      type: object
+      additionalProperties: false
+      required: [status, banco]
+      properties:
+        status:
+          type: string
+          const: pronto
+        banco:
+          type: string
+          const: conectado
+    Papel:
+      type: string
+      enum: [usuario, moderador, admin]
+    UsuarioPublico:
+      type: object
+      additionalProperties: false
+      required: [id, nome]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        avatar:
+          type: [string, "null"]
+          format: uri
+          maxLength: 2048
+          description: URL do avatar ou nulo quando não definida.
+    UsuarioPrivado:
+      type: object
+      additionalProperties: false
+      required: [id, nome, email, papel]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        avatar:
+          type: [string, "null"]
+          format: uri
+          maxLength: 2048
+        bio:
+          type: string
+          maxLength: 500
+        email:
+          type: string
+          format: email
+        papel:
+          $ref: "#/components/schemas/Papel"
+    RegistroInput:
+      type: object
+      additionalProperties: false
+      required: [nome, email, senha]
+      properties:
+        nome:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        senha:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          writeOnly: true
+        bio:
+          type: string
+          maxLength: 500
+    LoginInput:
+      type: object
+      additionalProperties: false
+      required: [email, senha]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        senha:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          writeOnly: true
+    PerfilPatchInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nome:
+          type: string
+          minLength: 2
+          maxLength: 100
+        avatar:
+          type: string
+          format: uri
+          pattern: "^https://"
+          maxLength: 2048
+        bio:
+          type: string
+          maxLength: 500
+    AuthEnvelope:
+      type: object
+      additionalProperties: false
+      required: [usuario, accessToken]
+      properties:
+        usuario:
+          $ref: "#/components/schemas/UsuarioPrivado"
+        accessToken:
+          type: string
+          description: JWT de curta duração; não persistir em localStorage ou sessionStorage.
+    Categoria:
+      type: string
+      enum: [restaurante, hospital, escola, mercado, transporte, lazer, servico_publico, comercio, hotel, outro]
+    EstadoRecurso:
+      type: string
+      enum: [presente, ausente, desconhecido]
+    ChaveRecurso:
+      type: string
+      enum: [rampa, elevador, banheiroAcessivel, pisoTatil, sinalizacaoBraile, estacionamentoAcessivel, portaLarga, libras, audioDescricao, caoPermitido]
+    Recursos:
+      type: object
+      additionalProperties: false
+      required: [rampa, elevador, banheiroAcessivel, pisoTatil, sinalizacaoBraile, estacionamentoAcessivel, portaLarga, libras, audioDescricao, caoPermitido]
+      properties:
+        rampa:
+          $ref: "#/components/schemas/EstadoRecurso"
+        elevador:
+          $ref: "#/components/schemas/EstadoRecurso"
+        banheiroAcessivel:
+          $ref: "#/components/schemas/EstadoRecurso"
+        pisoTatil:
+          $ref: "#/components/schemas/EstadoRecurso"
+        sinalizacaoBraile:
+          $ref: "#/components/schemas/EstadoRecurso"
+        estacionamentoAcessivel:
+          $ref: "#/components/schemas/EstadoRecurso"
+        portaLarga:
+          $ref: "#/components/schemas/EstadoRecurso"
+        libras:
+          $ref: "#/components/schemas/EstadoRecurso"
+        audioDescricao:
+          $ref: "#/components/schemas/EstadoRecurso"
+        caoPermitido:
+          $ref: "#/components/schemas/EstadoRecurso"
+    GeoJsonPoint:
+      type: object
+      additionalProperties: false
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          const: Point
+        coordinates:
+          type: array
+          description: Longitude e latitude, nesta ordem.
+          prefixItems:
+            - type: number
+              minimum: -180
+              maximum: 180
+            - type: number
+              minimum: -90
+              maximum: 90
+          minItems: 2
+          maxItems: 2
+    ContagemRecurso:
+      type: object
+      additionalProperties: false
+      required: [informado, confirmacoes, contestacoes, observacoesPresente, observacoesAusente, ultimaVerificacao]
+      properties:
+        informado:
+          $ref: "#/components/schemas/EstadoRecurso"
+        confirmacoes:
+          type: integer
+          minimum: 0
+        contestacoes:
+          type: integer
+          minimum: 0
+        observacoesPresente:
+          type: integer
+          minimum: 0
+        observacoesAusente:
+          type: integer
+          minimum: 0
+        ultimaVerificacao:
+          type: [string, "null"]
+          format: date-time
+    ResumoRecursos:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/ContagemRecurso"
+    ResumoAvaliacoes:
+      type: object
+      additionalProperties: false
+      required: [media, total, ultimaVerificacao]
+      properties:
+        media:
+          type: [number, "null"]
+          minimum: 1
+          maximum: 5
+        total:
+          type: integer
+          minimum: 0
+        ultimaVerificacao:
+          type: [string, "null"]
+          format: date-time
+    LocalPublico:
+      type: object
+      additionalProperties: false
+      required: [id, nome, descricao, endereco, categoria, localizacao, recursos, resumoAvaliacoes, autor, fotos, criadoEm, atualizadoEm]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        nome:
+          type: string
+        descricao:
+          type: string
+        endereco:
+          type: string
+        categoria:
+          $ref: "#/components/schemas/Categoria"
+        localizacao:
+          $ref: "#/components/schemas/GeoJsonPoint"
+        recursos:
+          $ref: "#/components/schemas/Recursos"
+        resumoRecursos:
+          $ref: "#/components/schemas/ResumoRecursos"
+        resumoAvaliacoes:
+          $ref: "#/components/schemas/ResumoAvaliacoes"
+        autor:
+          $ref: "#/components/schemas/UsuarioPublico"
+        fotos:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: uri
+        criadoEm:
+          type: string
+          format: date-time
+        atualizadoEm:
+          type: string
+          format: date-time
+    LocalInput:
+      type: object
+      additionalProperties: false
+      required: [nome, descricao, endereco, categoria, localizacao]
+      properties:
+        nome:
+          type: string
+          minLength: 2
+          maxLength: 200
+        descricao:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        endereco:
+          type: string
+          minLength: 5
+          maxLength: 300
+        categoria:
+          $ref: "#/components/schemas/Categoria"
+        localizacao:
+          $ref: "#/components/schemas/GeoJsonPoint"
+        recursos:
+          $ref: "#/components/schemas/Recursos"
+        fotos:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: uri
+    LocalPatchInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nome:
+          type: string
+          minLength: 2
+          maxLength: 200
+        descricao:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        endereco:
+          type: string
+          minLength: 5
+          maxLength: 300
+        categoria:
+          $ref: "#/components/schemas/Categoria"
+        localizacao:
+          $ref: "#/components/schemas/GeoJsonPoint"
+        recursos:
+          $ref: "#/components/schemas/Recursos"
+        fotos:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: uri
+    LocalEnvelope:
+      type: object
+      additionalProperties: false
+      required: [local]
+      properties:
+        local:
+          $ref: "#/components/schemas/LocalPublico"
+    Paginacao:
+      type: object
+      additionalProperties: false
+      required: [pagina, limite, total, totalPaginas, temProximaPagina]
+      properties:
+        pagina:
+          type: integer
+          minimum: 1
+        limite:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        totalPaginas:
+          type: integer
+          minimum: 0
+        temProximaPagina:
+          type: boolean
+    LocaisEnvelope:
+      type: object
+      additionalProperties: false
+      required: [locais, paginacao]
+      properties:
+        locais:
+          type: array
+          items:
+            $ref: "#/components/schemas/LocalPublico"
+        paginacao:
+          $ref: "#/components/schemas/Paginacao"
+    EstadoModeracao:
+      type: string
+      enum: [pendente, aprovado, rejeitado, arquivado, resolvida, arquivada]
+    ContribuicaoEnvelope:
+      type: object
+      additionalProperties: false
+      required: [id, status, mensagem]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        status:
+          $ref: "#/components/schemas/EstadoModeracao"
+        mensagem:
+          type: string
+    ObservacoesRecursos:
+      type: object
+      additionalProperties: false
+      properties:
+        rampa:
+          $ref: "#/components/schemas/EstadoRecurso"
+        elevador:
+          $ref: "#/components/schemas/EstadoRecurso"
+        banheiroAcessivel:
+          $ref: "#/components/schemas/EstadoRecurso"
+        pisoTatil:
+          $ref: "#/components/schemas/EstadoRecurso"
+        sinalizacaoBraile:
+          $ref: "#/components/schemas/EstadoRecurso"
+        estacionamentoAcessivel:
+          $ref: "#/components/schemas/EstadoRecurso"
+        portaLarga:
+          $ref: "#/components/schemas/EstadoRecurso"
+        libras:
+          $ref: "#/components/schemas/EstadoRecurso"
+        audioDescricao:
+          $ref: "#/components/schemas/EstadoRecurso"
+        caoPermitido:
+          $ref: "#/components/schemas/EstadoRecurso"
+    AvaliacaoInput:
+      type: object
+      additionalProperties: false
+      required: [nota, comentario]
+      properties:
+        nota:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comentario:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        observacoesRecursos:
+          $ref: "#/components/schemas/ObservacoesRecursos"
+    AvaliacaoPublica:
+      type: object
+      additionalProperties: false
+      required: [id, localId, nota, comentario, observacoesRecursos, autor, criadoEm, atualizadoEm]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        localId:
+          $ref: "#/components/schemas/ObjectId"
+        nota:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comentario:
+          type: string
+        observacoesRecursos:
+          $ref: "#/components/schemas/ObservacoesRecursos"
+        autor:
+          $ref: "#/components/schemas/UsuarioPublico"
+        criadoEm:
+          type: string
+          format: date-time
+        atualizadoEm:
+          type: string
+          format: date-time
+    AvaliacoesEnvelope:
+      type: object
+      additionalProperties: false
+      required: [avaliacoes, paginacao]
+      properties:
+        avaliacoes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvaliacaoPublica"
+        paginacao:
+          $ref: "#/components/schemas/Paginacao"
+    ResultadoGeocodificacao:
+      type: object
+      additionalProperties: false
+      required: [id, endereco, localizacao, atribuicao]
+      properties:
+        id:
+          type: string
+          description: Identificador efêmero normalizado para seleção no formulário.
+        endereco:
+          type: string
+        localizacao:
+          $ref: "#/components/schemas/GeoJsonPoint"
+        atribuicao:
+          type: string
+          examples: [© OpenStreetMap contributors]
+    GeocodificacaoEnvelope:
+      type: object
+      additionalProperties: false
+      required: [resultados, cache, atribuicao]
+      properties:
+        resultados:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ResultadoGeocodificacao"
+        cache:
+          type: boolean
+        atribuicao:
+          type: string
+          examples: [© OpenStreetMap contributors]
+    DenunciaInput:
+      type: object
+      additionalProperties: false
+      required: [alvoTipo, alvoId, motivo]
+      properties:
+        alvoTipo:
+          type: string
+          enum: [local, avaliacao]
+        alvoId:
+          $ref: "#/components/schemas/ObjectId"
+        motivo:
+          type: string
+          enum: [informacao_incorreta, conteudo_inadequado, duplicado, outro]
+        detalhes:
+          type: string
+          maxLength: 1000
+    TipoModeravel:
+      type: string
+      enum: [local, avaliacao, denuncia]
+    ItemModeracao:
+      type: object
+      additionalProperties: false
+      required: [id, tipo, status, conteudo, submetidoEm]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        tipo:
+          $ref: "#/components/schemas/TipoModeravel"
+        status:
+          $ref: "#/components/schemas/EstadoModeracao"
+        conteudo:
+          type: object
+          description: Snapshot moderável sem e-mail, credenciais ou dados de deficiência.
+        submetidoEm:
+          type: string
+          format: date-time
+    FilaModeracaoEnvelope:
+      type: object
+      additionalProperties: false
+      required: [itens, paginacao]
+      properties:
+        itens:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemModeracao"
+        paginacao:
+          $ref: "#/components/schemas/Paginacao"
+    DecisaoModeracaoEnvelope:
+      type: object
+      additionalProperties: false
+      required: [moderacao]
+      properties:
+        moderacao:
+          type: object
+          additionalProperties: false
+          required: [id, tipo, status]
+          properties:
+            id:
+              $ref: "#/components/schemas/ObjectId"
+            tipo:
+              $ref: "#/components/schemas/TipoModeravel"
+            status:
+              $ref: "#/components/schemas/EstadoModeracao"
+            motivo:
+              type: string
+    EventoModeracao:
+      type: object
+      additionalProperties: false
+      required: [id, acao, entidadeTipo, entidadeId, ator, estadoAnterior, estadoPosterior, metadados, criadoEm]
+      properties:
+        id:
+          $ref: "#/components/schemas/ObjectId"
+        acao:
+          type: string
+        entidadeTipo:
+          type: string
+        entidadeId:
+          $ref: "#/components/schemas/ObjectId"
+        ator:
+          $ref: "#/components/schemas/UsuarioPublico"
+        estadoAnterior:
+          type: [object, "null"]
+        estadoPosterior:
+          type: [object, "null"]
+        metadados:
+          type: object
+        criadoEm:
+          type: string
+          format: date-time
+    HistoricoModeracaoEnvelope:
+      type: object
+      additionalProperties: false
+      required: [eventos, paginacao]
+      properties:
+        eventos:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventoModeracao"
+        paginacao:
+          $ref: "#/components/schemas/Paginacao"

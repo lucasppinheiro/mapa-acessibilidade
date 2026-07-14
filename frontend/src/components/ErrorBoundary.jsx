@@ -11,29 +11,21 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('ErrorBoundary capturou erro:', error, errorInfo);
+    console.error('Erro inesperado na interface:', error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-          <div className="text-center p-8 max-w-md">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Algo deu errado</h1>
-            <p className="text-gray-600 mb-4">
-              Ocorreu um erro inesperado. Tente recarregar a página.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Recarregar página
-            </button>
+        <main id="conteudo-principal" tabIndex="-1" className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+          <div className="max-w-md text-center">
+            <h1 className="text-2xl font-bold text-slate-950">Algo deu errado</h1>
+            <p className="mt-2 text-slate-700">Ocorreu um erro inesperado. Tente recarregar a página.</p>
+            <button type="button" onClick={() => window.location.reload()} className="button-primary mt-5">Recarregar página</button>
           </div>
-        </div>
+        </main>
       );
     }
-
     return this.props.children;
   }
 }

@@ -1,64 +1,51 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { USER_ROLES } = require('../constants/domain');
 
 const userSchema = new mongoose.Schema({
   nome: {
     type: String,
-    required: [true, 'Nome é obrigatório'],
+    required: [true, 'Nome é obrigatório.'],
     trim: true,
-    maxlength: 100
+    maxlength: [100, 'Nome deve ter no máximo 100 caracteres.']
   },
   email: {
     type: String,
-    required: [true, 'Email é obrigatório'],
+    required: [true, 'E-mail é obrigatório.'],
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^\S+@\S+\.\S+$/, 'Formato de email inválido']
+    select: false,
+    match: [/^\S+@\S+\.\S+$/, 'Formato de e-mail inválido.']
   },
   senha: {
     type: String,
-    required: [true, 'Senha é obrigatória'],
-    minlength: [8, 'Senha deve ter no mínimo 8 caracteres']
+    required: [true, 'Senha é obrigatória.'],
+    minlength: [8, 'Senha deve ter no mínimo 8 caracteres.'],
+    select: false
   },
-  avatar: {
-    type: String,
-    default: ''
-  },
-  tipoDeficiencia: {
-    type: String,
-    enum: ['nenhuma', 'visual', 'auditiva', 'motora', 'cognitiva', 'multipla', 'outra'],
-    default: 'nenhuma'
-  },
-  bio: {
-    type: String,
-    maxlength: 500,
-    default: ''
-  },
-  tokenVersion: {
-    type: Number,
-    default: 1,
-    min: 1
+  avatar: { type: String, default: '', maxlength: 500 },
+  bio: { type: String, default: '', maxlength: 500 },
+  papel: { type: String, enum: USER_ROLES, default: 'usuario', index: true },
+  excluidoEm: { type: Date, default: null, index: true }
+}, { timestamps: true });
+
+userSchema.pre('save', async function hashPassword() {
+  if (this.isModified('senha')) {
+    this.senha = await bcrypt.hash(this.senha, 12);
   }
-}, {
-  timestamps: true
 });
 
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('senha')) return next();
-  const salt = await bcrypt.genSalt(10);
-  this.senha = await bcrypt.hash(this.senha, salt);
-  next();
-});
-
-userSchema.methods.compararSenha = async function(senhaDigitada) {
-  return await bcrypt.compare(senhaDigitada, this.senha);
+userSchema.methods.compararSenha = function compararSenha(value) {
+  return bcrypt.compare(value, this.senha);
 };
 
-userSchema.methods.toJSON = function() {
-  const obj = this.toObject();
-  delete obj.senha;
-  return obj;
+userSchema.methods.toJSON = function safeJson() {
+  const object = this.toObject();
+  delete object.email;
+  delete object.senha;
+  delete object.__v;
+  return object;
 };
 
 module.exports = mongoose.model('User', userSchema);

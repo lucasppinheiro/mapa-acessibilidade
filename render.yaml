@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: acessamapa
+    runtime: node
+    plan: free
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run install:apps && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health/ready
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_WRITE_MODE
+        value: moderated
+      - key: MONGODB_URI
+        sync: false
+      - key: ACCESS_TOKEN_SECRET
+        generateValue: true
+      - key: REFRESH_COOKIE_SECURE
+        value: "true"
+      - key: GEOCODING_PROVIDER
+        value: nominatim
+      - key: GEOCODING_BASE_URL
+        value: https://nominatim.openstreetmap.org
+      - key: GEOCODING_USER_AGENT
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"

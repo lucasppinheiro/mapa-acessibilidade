@@ -1,222 +1,238 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { FiCrosshair, FiMapPin, FiSearch, FiSend } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
-import MapaInterativo from '../components/MapaInterativo';
-import { criarLocal } from '../services/api';
-import { CATEGORIAS, RECURSOS } from '../constants';
-import StarRating from '../components/StarRating';
 import toast from 'react-hot-toast';
-import { FiMapPin, FiSave, FiArrowLeft } from 'react-icons/fi';
+import InlineError from '../components/InlineError';
+import MapaInterativo from '../components/MapaInterativo';
+import { RecursosFieldset } from '../components/RecursosInfo';
+import { CATEGORIAS, recursosDesconhecidos } from '../constants';
+import { buscarEndereco, criarLocal, extrairMensagemErro } from '../services/api';
+import { errosDeCampos } from '../utils/domain';
+
+const validar = (form) => {
+  const erros = {};
+  if (form.nome.trim().length < 2) erros.nome = 'Informe o nome do local.';
+  if (form.endereco.trim().length < 5) erros.endereco = 'Informe o endereço ou uma referência.';
+  if (form.descricao.trim().length < 10) erros.descricao = 'Descreva o local com pelo menos 10 caracteres.';
+  const lat = Number(form.latitude);
+  const lng = Number(form.longitude);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) erros.latitude = 'Informe uma latitude entre -90 e 90.';
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) erros.longitude = 'Informe uma longitude entre -180 e 180.';
+  return erros;
+};
+
+const normalizarResultados = (data) => data.resultados || data.itens || (Array.isArray(data) ? data : []);
 
 export default function NovoLocal() {
   const navigate = useNavigate();
-  const [carregando, setCarregando] = useState(false);
-  const [coordenadas, setCoordenadas] = useState(null);
+  const formRef = useRef(null);
   const [form, setForm] = useState({
     nome: '',
-    descricao: '',
     endereco: '',
+    descricao: '',
     categoria: 'outro',
-    notaAcessibilidade: 3,
-    recursos: {
-      rampa: false,
-      elevador: false,
-      banheiroAcessivel: false,
-      pisoTatil: false,
-      sinalizacaoBraile: false,
-      estacionamentoAcessivel: false,
-      portaLarga: false,
-      libras: false,
-      audioDescricao: false,
-      caoPermitido: false
-    }
+    latitude: '',
+    longitude: '',
+    recursos: recursosDesconhecidos()
   });
+  const [consulta, setConsulta] = useState('');
+  const [resultados, setResultados] = useState([]);
+  const [resultadoSelecionado, setResultadoSelecionado] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [localizando, setLocalizando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erros, setErros] = useState({});
+  const [mensagemEndereco, setMensagemEndereco] = useState('');
+  const [erroGeral, setErroGeral] = useState('');
 
-  const handleRecurso = (recurso) => {
-    setForm({
-      ...form,
-      recursos: {
-        ...form.recursos,
-        [recurso]: !form.recursos[recurso]
-      }
-    });
+  const atualizar = (campo, valor) => setForm((atual) => ({ ...atual, [campo]: valor }));
+  const coordenadas = Number.isFinite(Number(form.latitude)) && Number.isFinite(Number(form.longitude)) && form.latitude !== '' && form.longitude !== ''
+    ? { lat: Number(form.latitude), lng: Number(form.longitude) }
+    : null;
+
+  const pesquisarEndereco = async () => {
+    setMensagemEndereco('');
+    if (consulta.trim().length < 3) {
+      setMensagemEndereco('Digite pelo menos 3 caracteres e acione o botão Buscar endereço.');
+      return;
+    }
+    setBuscando(true);
+    try {
+      const { data } = await buscarEndereco(consulta.trim());
+      const itens = normalizarResultados(data);
+      setResultados(itens);
+      setMensagemEndereco(itens.length ? `${itens.length} resultados encontrados.` : 'Nenhum endereço encontrado. Você pode preencher as coordenadas manualmente.');
+    } catch (error) {
+      setMensagemEndereco(extrairMensagemErro(error, 'A busca de endereço não está disponível. Preencha as coordenadas manualmente.'));
+    } finally {
+      setBuscando(false);
+    }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const selecionarResultado = (item, indice) => {
+    const [longitudeGeo, latitudeGeo] = item.localizacao?.coordinates || [];
+    const latitude = latitudeGeo ?? item.latitude ?? item.lat;
+    const longitude = longitudeGeo ?? item.longitude ?? item.lon ?? item.lng;
+    const endereco = item.endereco || item.nome || item.display_name;
+    setResultadoSelecionado(String(item.id || indice));
+    setForm((atual) => ({ ...atual, endereco, latitude: String(latitude), longitude: String(longitude) }));
+  };
 
-    if (!coordenadas) {
-      toast.error('Clique no mapa para selecionar a localização!');
+  const usarLocalizacao = () => {
+    setMensagemEndereco('');
+    if (!navigator.geolocation) {
+      setMensagemEndereco('Seu navegador não oferece geolocalização. Preencha latitude e longitude manualmente.');
+      return;
+    }
+    setLocalizando(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setForm((atual) => ({ ...atual, latitude: String(coords.latitude), longitude: String(coords.longitude) }));
+        setMensagemEndereco('Coordenadas preenchidas. Revise-as antes de enviar.');
+        setLocalizando(false);
+      },
+      () => {
+        setMensagemEndereco('Localização não compartilhada. Você pode buscar um endereço ou digitar as coordenadas.');
+        setLocalizando(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
+  const enviar = async (event) => {
+    event.preventDefault();
+    const novosErros = validar(form);
+    setErros(novosErros);
+    setErroGeral('');
+    if (Object.keys(novosErros).length) {
+      requestAnimationFrame(() => formRef.current?.querySelector('[aria-invalid="true"]')?.focus());
       return;
     }
 
-    setCarregando(true);
+    setSalvando(true);
     try {
-      const dados = {
-        ...form,
-        coordenadas: { lat: coordenadas.lat, lng: coordenadas.lng }
-      };
-      const { data } = await criarLocal(dados);
-      toast.success('Local adicionado com sucesso!');
-      navigate(`/local/${data._id}`);
+      await criarLocal({
+        nome: form.nome.trim(),
+        endereco: form.endereco.trim(),
+        descricao: form.descricao.trim(),
+        categoria: form.categoria,
+        recursos: form.recursos,
+        localizacao: { type: 'Point', coordinates: [Number(form.longitude), Number(form.latitude)] }
+      });
+      toast.success('Local enviado para moderação.');
+      navigate('/');
     } catch (error) {
-      toast.error(error.response?.data?.mensagem || 'Erro ao adicionar local');
+      const errosApi = errosDeCampos(error, {
+        'localizacao.coordinates': 'latitude'
+      });
+      if (Object.keys(errosApi).length) {
+        setErros(errosApi);
+        requestAnimationFrame(() => formRef.current?.querySelector('[aria-invalid="true"]')?.focus());
+      } else {
+        setErroGeral(extrairMensagemErro(error, 'Não foi possível enviar o local. Revise os dados e tente novamente.'));
+      }
     } finally {
-      setCarregando(false);
+      setSalvando(false);
     }
   };
 
   return (
-    <main className="min-h-[calc(100vh-64px)] bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-            aria-label="Voltar"
-          >
-            <FiArrowLeft className="text-xl" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Adicionar Novo Local</h1>
-            <p className="text-gray-600 text-sm">Contribua com o mapa de acessibilidade</p>
-          </div>
-        </div>
+    <main id="conteudo-principal" tabIndex="-1" aria-labelledby="titulo-pagina" className="min-h-[calc(100vh-4rem)] bg-slate-50 px-4 py-8">
+      <div className="mx-auto max-w-5xl">
+        <h1 id="titulo-pagina" className="text-3xl font-bold text-slate-950">Cadastrar local</h1>
+        <p className="mt-2 max-w-3xl text-slate-700">Os dados serão tratados como informados pelo autor e só ficarão públicos após moderação.</p>
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-5">
-            <div className="bg-white p-5 rounded-xl shadow-sm border space-y-4">
-              <h2 className="font-semibold text-gray-900 text-lg">Informações do Local</h2>
+        <form ref={formRef} noValidate onSubmit={enviar} className="mt-6 space-y-6">
+          {erroGeral && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-900">{erroGeral}</p>}
 
+          <section className="card" aria-labelledby="titulo-dados-local">
+            <h2 id="titulo-dados-local" className="text-xl font-semibold">Dados do local</h2>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="nome" className="block text-sm font-medium text-gray-700 mb-1">Nome do local *</label>
-                <input
-                  id="nome"
-                  type="text"
-                  required
-                  maxLength={200}
-                  value={form.nome}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Ex: Shopping Centro"
-                />
+                <label htmlFor="nome" className="label">Nome do local</label>
+                <input id="nome" className="input" required maxLength="200" value={form.nome} onChange={(event) => atualizar('nome', event.target.value)} aria-invalid={Boolean(erros.nome)} aria-describedby={erros.nome ? 'erro-nome' : undefined} />
+                <InlineError id="erro-nome">{erros.nome}</InlineError>
               </div>
-
               <div>
-                <label htmlFor="endereco" className="block text-sm font-medium text-gray-700 mb-1">Endereço *</label>
-                <input
-                  id="endereco"
-                  type="text"
-                  required
-                  value={form.endereco}
-                  onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Ex: Rua das Flores, 123 - Centro"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="categoria" className="block text-sm font-medium text-gray-700 mb-1">Categoria *</label>
-                <select
-                  id="categoria"
-                  value={form.categoria}
-                  onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {Object.entries(CATEGORIAS).map(([key, val]) => (
-                    <option key={key} value={key}>{val.emoji} {val.label}</option>
-                  ))}
+                <label htmlFor="categoria" className="label">Categoria</label>
+                <select id="categoria" className="input" value={form.categoria} onChange={(event) => atualizar('categoria', event.target.value)}>
+                  {Object.entries(CATEGORIAS).map(([valor, item]) => <option key={valor} value={valor}>{item.label}</option>)}
                 </select>
               </div>
+              <div className="md:col-span-2">
+                <label htmlFor="descricao" className="label">Descrição</label>
+                <textarea id="descricao" className="input min-h-28 resize-y" required maxLength="1000" value={form.descricao} onChange={(event) => atualizar('descricao', event.target.value)} aria-invalid={Boolean(erros.descricao)} aria-describedby={erros.descricao ? 'erro-descricao' : 'ajuda-descricao'} />
+                <p id="ajuda-descricao" className="mt-1 text-sm text-slate-600">Descreva o local; não inclua dados pessoais.</p>
+                <InlineError id="erro-descricao">{erros.descricao}</InlineError>
+              </div>
+            </div>
+          </section>
 
+          <section className="card" aria-labelledby="titulo-endereco">
+            <h2 id="titulo-endereco" className="text-xl font-semibold">Endereço e coordenadas</h2>
+            <p className="mt-1 text-sm text-slate-700">A busca só ocorre quando você aciona o botão. Não informe nomes de pessoas ou outros dados pessoais.</p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row" role="search">
+              <label htmlFor="consulta-endereco" className="sr-only">Endereço para busca</label>
+              <input id="consulta-endereco" className="input flex-1" value={consulta} onChange={(event) => setConsulta(event.target.value)} placeholder="Rua, número, cidade e estado" />
+              <button type="button" className="button-secondary" disabled={buscando} onClick={pesquisarEndereco}><FiSearch aria-hidden="true" /> {buscando ? 'Buscando...' : 'Buscar endereço'}</button>
+            </div>
+            <p className="mt-2 text-xs text-slate-600">Busca geográfica: © colaboradores do OpenStreetMap.</p>
+            <p className="mt-2 text-sm text-slate-700" role="status" aria-live="polite">{mensagemEndereco}</p>
+
+            {resultados.length > 0 && (
+              <fieldset className="mt-4">
+                <legend className="font-semibold text-slate-900">Selecione um resultado</legend>
+                <div className="mt-2 space-y-2">
+                  {resultados.map((item, indice) => {
+                    const valor = String(item.id || indice);
+                    const rotulo = item.endereco || item.nome || item.display_name;
+                    return (
+                      <label key={valor} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-slate-300 p-3 has-[:checked]:border-blue-700 has-[:checked]:bg-blue-50">
+                        <input type="radio" name="resultado-endereco" className="mt-1" value={valor} checked={resultadoSelecionado === valor} onChange={() => selecionarResultado(item, indice)} />
+                        <span>{rotulo}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
+
+            <div className="mt-5">
+              <label htmlFor="endereco" className="label">Endereço ou referência</label>
+              <input id="endereco" className="input" required maxLength="300" value={form.endereco} onChange={(event) => atualizar('endereco', event.target.value)} aria-invalid={Boolean(erros.endereco)} aria-describedby={erros.endereco ? 'erro-endereco' : undefined} />
+              <InlineError id="erro-endereco">{erros.endereco}</InlineError>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="descricao" className="block text-sm font-medium text-gray-700 mb-1">Descrição *</label>
-                <textarea
-                  id="descricao"
-                  required
-                  maxLength={1000}
-                  rows={4}
-                  value={form.descricao}
-                  onChange={(e) => setForm({ ...form, descricao: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                  placeholder="Descreva a acessibilidade do local..."
-                />
+                <label htmlFor="latitude" className="label">Latitude</label>
+                <input id="latitude" type="number" step="any" min="-90" max="90" required inputMode="decimal" className="input" value={form.latitude} onChange={(event) => atualizar('latitude', event.target.value)} aria-invalid={Boolean(erros.latitude)} aria-describedby={erros.latitude ? 'erro-latitude' : undefined} />
+                <InlineError id="erro-latitude">{erros.latitude}</InlineError>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nota de acessibilidade *</label>
-                <StarRating
-                  nota={form.notaAcessibilidade}
-                  onChange={(nota) => setForm({ ...form, notaAcessibilidade: nota })}
-                  tamanho="text-2xl"
-                />
+                <label htmlFor="longitude" className="label">Longitude</label>
+                <input id="longitude" type="number" step="any" min="-180" max="180" required inputMode="decimal" className="input" value={form.longitude} onChange={(event) => atualizar('longitude', event.target.value)} aria-invalid={Boolean(erros.longitude)} aria-describedby={erros.longitude ? 'erro-longitude' : undefined} />
+                <InlineError id="erro-longitude">{erros.longitude}</InlineError>
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-xl shadow-sm border">
-              <h2 className="font-semibold text-gray-900 text-lg mb-3">Recursos de Acessibilidade</h2>
-              <p className="text-sm text-gray-500 mb-4">Selecione os recursos disponíveis neste local</p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="Recursos de acessibilidade disponíveis">
-                {Object.entries(RECURSOS).map(([key, info]) => {
-                  const Icon = info.icon;
-                  return (
-                    <label
-                      key={key}
-                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all
-                        ${form.recursos[key]
-                          ? 'border-blue-500 bg-blue-50 text-blue-800'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                        }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.recursos[key]}
-                        onChange={() => handleRecurso(key)}
-                        className="sr-only"
-                      />
-                      <Icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-                      <span className="text-sm font-medium">{info.label}</span>
-                      {form.recursos[key] && (
-                        <span className="ml-auto text-blue-600 text-lg" aria-hidden="true">✓</span>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
+            <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <h3 className="font-semibold text-blue-950">Usar a localização do dispositivo é opcional</h3>
+              <p className="mt-1 text-sm text-blue-950">O navegador pedirá permissão somente depois do clique. A recusa não impede o cadastro.</p>
+              <button type="button" className="button-secondary mt-3" disabled={localizando} onClick={usarLocalizacao}><FiCrosshair aria-hidden="true" /> {localizando ? 'Obtendo localização...' : 'Usar minha localização'}</button>
             </div>
 
-            <button
-              type="submit"
-              disabled={carregando}
-              className="w-full py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold flex items-center justify-center gap-2 disabled:opacity-50 text-lg"
-            >
-              <FiSave aria-hidden="true" />
-              {carregando ? 'Salvando...' : 'Salvar Local'}
-            </button>
-          </div>
+            <details className="mt-5 rounded-lg border border-slate-300 p-4">
+              <summary className="cursor-pointer font-semibold text-slate-900">Conferir ou ajustar no mapa (opcional)</summary>
+              <p className="mt-2 text-sm text-slate-700">Clique no mapa para ajustar as coordenadas. O preenchimento manual acima continua disponível.</p>
+              <div className="mt-3 h-96">
+                <MapaInterativo marcadorSelecionado={coordenadas} onLocationSelect={({ lat, lng }) => setForm((atual) => ({ ...atual, latitude: String(lat), longitude: String(lng) }))} titulo="Mapa para conferência das coordenadas" />
+              </div>
+            </details>
+          </section>
 
-          <div className="space-y-3">
-            <div className="bg-white p-4 rounded-xl shadow-sm border">
-              <div className="flex items-center gap-2 mb-3">
-                <FiMapPin className="text-blue-600" aria-hidden="true" />
-                <h2 className="font-semibold text-gray-900">Localização no Mapa</h2>
-              </div>
-              <p className="text-sm text-gray-500 mb-3">
-                Clique no mapa para marcar a localização do local
-              </p>
-              {coordenadas && (
-                <p className="text-xs text-green-600 font-medium mb-2">
-                  ✅ Localização selecionada: {coordenadas.lat.toFixed(6)}, {coordenadas.lng.toFixed(6)}
-                </p>
-              )}
-              <div className="h-[500px] rounded-lg overflow-hidden">
-                <MapaInterativo
-                  onLocationSelect={(latlng) => setCoordenadas(latlng)}
-                  marcadorSelecionado={coordenadas}
-                />
-              </div>
-            </div>
-          </div>
+          <section className="card"><RecursosFieldset valores={form.recursos} onChange={(recurso, estado) => setForm((atual) => ({ ...atual, recursos: { ...atual.recursos, [recurso]: estado } }))} /></section>
+
+          <button type="submit" className="button-primary" disabled={salvando}><FiSend aria-hidden="true" /> {salvando ? 'Enviando...' : 'Enviar para moderação'}</button>
         </form>
       </div>
     </main>

@@ -1,12 +1,28 @@
 {
-  "name": "mapa-acessibilidade-urbana",
+  "name": "acessamapa",
   "version": "1.0.0",
-  "description": "Mapa colaborativo de acessibilidade urbana - Projeto Full Stack",
+  "private": true,
+  "description": "Plataforma colaborativa para consulta de informações de acessibilidade urbana.",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
   "scripts": {
-    "backend": "cd backend && npm run dev",
-    "frontend": "cd frontend && npm run dev",
-    "install-all": "cd backend && npm install && cd ../frontend && npm install",
-    "dev": "concurrently \"npm run backend\" \"npm run frontend\""
+    "dev": "concurrently --kill-others-on-fail \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "install:apps": "npm ci --prefix backend && npm ci --prefix frontend",
+    "setup": "npm ci && npm run install:apps",
+    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
+    "test": "npm run test --prefix backend && npm run test --prefix frontend",
+    "coverage": "npm run coverage --prefix backend && npm run coverage --prefix frontend",
+    "openapi:lint": "redocly lint docs/openapi.yaml",
+    "build": "npm run build --prefix frontend",
+    "start": "npm run start --prefix backend",
+    "seed": "npm run seed --prefix backend",
+    "migrate": "npm run migrate --prefix backend",
+    "e2e": "npm run e2e --prefix frontend",
+    "ci": "npm run lint && npm run test && npm run coverage && npm run openapi:lint && npm run build"
   },
   "keywords": [
     "acessibilidade",
@@ -14,8 +30,8 @@
     "inclusão",
     "urbano"
   ],
-  "license": "MIT",
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "@redocly/cli": "^2.39.0",
+    "concurrently": "^10.0.3"
   }
 }
