@@ -1,77 +1,93 @@
-# Preparação de deploy
+# Deploy e operação da demonstração
 
-O deploy público não faz parte da execução local. Este documento descreve os controles necessários para uma demonstração com dados exclusivamente sintéticos.
+A demonstração pública está disponível em [acessamapa.onrender.com](https://acessamapa.onrender.com). O ambiente usa somente dados sintéticos e mantém novas contribuições em moderação.
 
-## Pendências externas
+## Arquitetura publicada
 
-- autorização para criar recursos no Render e MongoDB Atlas;
-- conta e projeto de nuvem definidos pelo responsável;
-- domínio e URL pública, se aplicável;
-- valores de segredos configurados diretamente no provedor;
-- credenciais privadas da conta moderadora;
-- lista de rede do Atlas restrita ao ambiente autorizado.
+- Um Web Service Node.js no Render executa o backend e serve o frontend compilado.
+- A API responde em `/api/v1` na mesma origem da interface.
+- O MongoDB Atlas mantém os dados da demonstração em um banco separado.
+- O endpoint `/api/v1/health/ready` só responde como pronto quando a conexão com o banco está disponível.
+- O Render inicia novos deploys após a aprovação dos checks da branch `main`.
 
-Nenhuma credencial deve ser enviada por chat, commitada no Git ou incluída em screenshots.
+O arquivo [render.yaml](../render.yaml) descreve o serviço, o comando de build, o comando de inicialização e as variáveis necessárias.
 
-## Render
+## Variáveis do Render
 
-O `render.yaml` descreve um único Web Service Node.js. O build instala os três conjuntos de dependências, gera o frontend Vite e o Express serve a aplicação e `/api/v1` na mesma origem.
+Configure os valores sensíveis somente no painel do provedor:
 
-Configurar no painel:
+| Variável | Uso |
+| --- | --- |
+| `MONGODB_URI` | URI do usuário exclusivo da aplicação no Atlas. |
+| `ACCESS_TOKEN_SECRET` | Segredo longo e aleatório para os access tokens. |
+| `REFRESH_COOKIE_SECURE` | Deve permanecer como `true` no ambiente HTTPS. |
+| `GEOCODING_USER_AGENT` | Identificação da aplicação para o provedor de geocodificação. |
+| `DEMO_WRITE_MODE` | `moderated` recebe contribuições pendentes; `read_only` bloqueia novas escritas. |
 
-- `MONGODB_URI`: URI do usuário exclusivo da aplicação;
-- `ACCESS_TOKEN_SECRET`: segredo longo e aleatório, se não for gerado pelo blueprint;
-- `REFRESH_COOKIE_SECURE`: `true` no ambiente HTTPS público;
-- `GEOCODING_USER_AGENT`: identificação da aplicação com meio de contato operacional;
-- `DEMO_WRITE_MODE`: `moderated` para receber contribuições pendentes ou `read_only` para bloquear escrita.
-
-Não registrar refresh tokens, cookies, authorization headers ou a URI do banco nos logs.
+Não registre URI do banco, tokens, cookies, senhas ou cabeçalhos de autorização nos logs. Esses valores também não devem aparecer em commits, issues ou capturas de tela.
 
 ## MongoDB Atlas
 
-1. Criar cluster e banco exclusivos para a demonstração.
-2. Criar usuário da aplicação com o menor privilégio necessário.
-3. Restringir acesso de rede ao ambiente do Render autorizado; não manter `0.0.0.0/0` como configuração permanente.
-4. Habilitar alertas, backups e retenção adequados ao plano escolhido.
-5. Executar a migração idempotente antes do seed quando houver base legada autorizada.
-6. Interromper a migração se qualquer dado real ou origem não validada for encontrado.
+O ambiente deve usar um replica set, como o oferecido pelo Atlas, porque os fluxos de moderação e arquivamento usam transações.
 
-O ambiente deve oferecer replica set, como o MongoDB Atlas, porque operações de moderação e arquivamento usam transações. Uma instância standalone não é suportada para essas jornadas.
+Controles esperados:
+
+1. banco separado para a demonstração;
+2. usuário exclusivo da aplicação com o menor privilégio necessário;
+3. lista de acesso de rede limitada à infraestrutura autorizada;
+4. credenciais armazenadas somente como segredo do Render;
+5. dataset sintético carregado pelo seed idempotente;
+6. conta moderadora mantida fora do repositório.
+
+Se a URI ou a senha do banco for alterada, atualize `MONGODB_URI` no Render e execute um novo deploy. Uma falha `bad auth` indica credencial inválida; uma falha `querySrv` aponta para resolução DNS ou endereço incorreto do cluster.
 
 ## Geocodificação
 
-A busca de endereço deve passar pelo backend e ocorrer somente após envio explícito do formulário. O adaptador precisa:
+A busca de endereço passa pelo backend e só ocorre após o envio explícito do formulário. O adaptador:
 
-- limitar o uso do Nominatim público a no máximo uma requisição por segundo por instância;
-- enviar identificação válida da aplicação;
-- manter atribuição ao OpenStreetMap;
-- aplicar cache e proteção contra abuso;
-- não implementar autocomplete no cliente;
-- permitir troca de provedor por configuração.
+- limita chamadas ao Nominatim público;
+- envia a identificação configurada em `GEOCODING_USER_AGENT`;
+- mantém a atribuição ao OpenStreetMap;
+- usa cache para reduzir chamadas repetidas;
+- não implementa autocomplete;
+- permite trocar o provedor por variável de ambiente.
 
-## Ordem de publicação
+## Publicação e verificação
 
-1. validar contrato, lint, testes, cobertura, build e E2E no CI;
-2. revisar o diff e garantir ausência de dados sensíveis;
-3. provisionar Atlas e Render com autorização;
-4. executar `npm run migrate` no ambiente autorizado;
-5. executar `npm run seed` com dataset sintético;
-6. criar ou promover a conta moderadora fora do repositório;
-7. executar smoke test de autenticação, listagem, contribuição pendente e moderação;
-8. executar o roteiro de acessibilidade e registrar pendências;
-9. publicar URL e screenshots apenas depois das validações.
+Antes de promover uma mudança para `main`:
 
-## Rollback
+1. revisar o diff e confirmar que não há credenciais ou dados reais;
+2. executar lint, testes, cobertura, validação OpenAPI e build;
+3. aguardar os testes E2E e as verificações automatizadas de acessibilidade;
+4. confirmar o deploy no Render;
+5. verificar `/api/v1/health/live` e `/api/v1/health/ready`;
+6. executar um smoke test usando apenas os dados sintéticos.
 
-- reverter a versão do serviço pelo provedor;
-- manter migrações idempotentes e compatíveis com reexecução;
-- preservar eventos de auditoria e conteúdo moderado;
-- usar `DEMO_WRITE_MODE=read_only` para contenção operacional enquanto uma falha é investigada;
-- não apagar coleções ou registros para corrigir uma publicação.
+O seed pode ser executado com:
 
-## Referências operacionais
+```bash
+npm run seed
+```
+
+Em uma base legada autorizada, execute a migração idempotente antes do seed:
+
+```bash
+npm run migrate
+```
+
+Não execute migração se houver qualquer indício de dados reais ou origem não validada.
+
+## Contenção e rollback
+
+- Alterar `DEMO_WRITE_MODE` para `read_only` bloqueia novas escritas durante uma investigação.
+- O Render permite retornar a uma versão anterior do serviço.
+- Migrações devem continuar idempotentes e seguras para reexecução.
+- Eventos de auditoria e conteúdo moderado devem ser preservados.
+- Coleções não devem ser apagadas como forma de corrigir uma publicação.
+
+## Referências
 
 - [Deploy de aplicações Node e Express no Render](https://render.com/docs/deploy-node-express-app)
-- [Referência oficial de Blueprints `render.yaml`](https://render.com/docs/blueprint-spec)
-- [Configuração da lista de acesso de rede no MongoDB Atlas](https://www.mongodb.com/docs/atlas/security/add-ip-address-to-list/)
+- [Referência de Blueprints do Render](https://render.com/docs/blueprint-spec)
+- [Lista de acesso de rede do MongoDB Atlas](https://www.mongodb.com/docs/atlas/security/add-ip-address-to-list/)
 - [Política de uso do Nominatim público](https://operations.osmfoundation.org/policies/nominatim/)

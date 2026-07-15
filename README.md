@@ -1,183 +1,161 @@
 # AcessaMapa
 
-O AcessaMapa é uma aplicação full stack para consultar e registrar informações de acessibilidade em locais urbanos. Esta versão transforma um protótipo de mapa colaborativo em um estudo de caso sobre engenharia de software, acessibilidade, privacidade e confiança comunitária.
+[Demonstração online](https://acessamapa.onrender.com) · [Documentação da API](docs/openapi.yaml) · [Pipeline de CI](https://github.com/lucasppinheiro/mapa-acessibilidade/actions/workflows/ci.yml)
 
-O projeto está em evolução. A aplicação tem como **alvo** as WCAG 2.2 no nível AA, mas não declara conformidade: os testes manuais com tecnologias assistivas e os critérios documentados em [`docs/validacao-acessibilidade.md`](docs/validacao-acessibilidade.md) precisam ser concluídos e registrados antes de qualquer alegação desse tipo.
+Criei o AcessaMapa para reunir informações de acessibilidade de locais urbanos de forma clara e verificável. Em vez de resumir tudo em uma nota, organizei cada recurso como `presente`, `ausente` ou `desconhecido` e mantive o histórico das decisões de moderação.
 
-## Problema
+Tratei o mapa como uma visualização opcional. A busca, os filtros e a consulta funcionam pela lista textual, enquanto o mapa é carregado apenas quando a pessoa decide usá-lo.
 
-Informações sobre acessibilidade costumam estar dispersas, ficar desatualizadas ou aparecer sem contexto sobre quem as verificou. Uma nota única também pode esconder diferenças importantes: um local pode ter rampa, mas não ter banheiro acessível, por exemplo.
+A demonstração pública utiliza somente dados sintéticos e mantém novas contribuições em moderação.
 
-O AcessaMapa trata cada informação de recurso como `presente`, `ausente` ou `desconhecido`, mostra quando ela foi informada ou verificada e submete novas contribuições à moderação. A lista textual é a experiência principal; o mapa é uma visualização complementar.
+## O problema que eu quis resolver
 
-## Decisões de produto e engenharia
+Informações sobre acessibilidade costumam aparecer dispersas, desatualizadas ou sem contexto sobre quem as verificou. Uma nota única também esconde diferenças importantes: um local pode ter rampa e, ao mesmo tempo, não ter banheiro acessível.
 
-- **Monólito modular:** React, Express e MongoDB, sem complexidade operacional de microserviços.
-- **Mesma origem:** o Express serve a API em `/api/v1` e o build do Vite em produção.
-- **Privacidade por padrão:** nenhum DTO público inclui e-mail, credenciais, dados de deficiência ou campos internos de governança.
-- **Dados minimizados:** o produto não pergunta o tipo de deficiência de usuários ou avaliadores.
-- **Confiança explicável:** confirmações, contestações e data da última verificação são apresentadas sem uma pontuação opaca.
-- **Moderação e rastreabilidade:** locais e avaliações novos entram como pendentes; decisões geram eventos append-only de auditoria.
-- **Escrita controlada na demo:** `DEMO_WRITE_MODE=moderated`; o modo operacional `read_only` bloqueia novas escritas.
-- **Mapa opcional:** busca, filtros, consulta, cadastro e avaliação devem funcionar por lista, teclado e leitor de tela.
+Minha proposta foi registrar cada recurso separadamente, mostrar quando a informação foi enviada ou confirmada e preservar o histórico das decisões de moderação.
 
-## Arquitetura
+## O que eu construí
+
+- Busca por nome ou endereço, com normalização de acentos e retorno claro quando o local ainda não está cadastrado.
+- Alternância entre lista e mapa, com o mapa carregado sob demanda para reduzir o JavaScript inicial.
+- Filtros por categoria, avaliação e recursos de acessibilidade.
+- Cadastro de locais com busca explícita de endereço, coordenadas editáveis e geolocalização opcional.
+- Avaliações com observações por recurso, sem transformar informações diferentes em uma pontuação opaca.
+- Fila de moderação para aprovar ou rejeitar locais e avaliações, com registro de auditoria.
+- Perfis de usuário, moderador e administrador com permissões distintas.
+
+## Decisões de engenharia
+
+Escolhi um monólito modular com React, Express e MongoDB. Para o tamanho e o objetivo do projeto, essa arquitetura mantém o código fácil de executar, testar e revisar sem acrescentar a operação de microserviços.
+
+Em produção, o Express serve o frontend compilado e a API em `/api/v1` na mesma origem. A aplicação usa MongoDB Atlas e roda como um único Web Service no Render.
 
 ```mermaid
 flowchart LR
   U["Navegador"] -->|"mesma origem"| E["Express"]
   E --> A["API /api/v1"]
-  E --> V["Frontend Vite compilado"]
-  A --> M[("MongoDB")]
-  A -->|"busca explícita, cache e limite"| G["Provedor de geocodificação"]
+  E --> V["Frontend React compilado"]
+  A --> M[("MongoDB Atlas")]
+  A -->|"busca explícita e cache"| G["Provedor de geocodificação"]
 ```
 
-O backend mantém módulos para autenticação e sessões, locais, avaliações, denúncias, moderação, geocodificação e auditoria. O contrato HTTP está documentado em [`docs/openapi.yaml`](docs/openapi.yaml).
+Outras escolhas importantes:
 
-A conversão idempotente do modelo legado e seus controles de segurança estão descritos em [`docs/migracao-v1.md`](docs/migracao-v1.md).
+- armazeno coordenadas como GeoJSON `Point` e uso um índice `2dsphere`;
+- padronizo erros da API com código, mensagem e request ID;
+- mantenho a geocodificação no backend, com cache, limite de requisições e provedor configurável.
 
-## Segurança e privacidade
+## Acessibilidade na prática
 
-- O access token é curto e mantido apenas em memória no navegador.
-- O refresh token é opaco, armazenado como hash e enviado em cookie `HttpOnly`, `Secure` e `SameSite=Lax`.
-- A renovação rotaciona o refresh token; logout da sessão atual e de todas as sessões revoga credenciais no servidor.
-- DTOs com lista explícita de campos evitam mass assignment e exposição acidental.
-- Papéis `usuario`, `moderador` e `admin` aplicam a matriz de permissões.
-- Exclusão de conta anonimiza contribuições em vez de apagar o histórico comunitário.
-- Logs estruturados usam request ID e não devem registrar tokens, senhas ou dados sensíveis.
+Usei as WCAG 2.2 AA como referência de projeto e fiz com que as jornadas principais não dependessem do mapa. A interface está em português do Brasil porque o caso de uso foi pensado para informações locais.
 
-Consulte também a página de privacidade da aplicação. Este repositório e o seed devem conter somente dados sintéticos. Não use dados reais de pessoas, evidências brutas ou credenciais.
+- A lista permanece disponível como alternativa textual completa.
+- A alternância entre lista e mapa funciona com controles nativos.
+- A geolocalização só é solicitada após explicação e ação da pessoa usuária.
+- Formulários associam erros aos campos, movem o foco para o primeiro erro e anunciam atualizações importantes.
+- Avaliações usam botões de opção nativos agrupados em `fieldset`; recursos relacionados também usam controles nativos.
+- Skip link, foco visível, títulos de página, `aria-current`, redução de movimento e `forced-colors` fazem parte da implementação.
+- Testes com axe ajudam a detectar regressões nas rotas principais.
 
-## Acessibilidade
+O roteiro de verificação manual está documentado em [docs/validacao-acessibilidade.md](docs/validacao-acessibilidade.md).
 
-As jornadas são projetadas para funcionar sem depender do mapa:
+## Segurança, privacidade e confiança
 
-- lista de locais disponível em todos os tamanhos de tela;
-- alternância acessível entre lista e mapa;
-- busca de endereço acionada por botão, sem autocomplete;
-- resultados de endereço selecionáveis por teclado;
-- latitude e longitude editáveis como alternativa;
-- geolocalização solicitada somente após explicação e ação do usuário;
-- estrelas editáveis como grupo de opções de rádio;
-- recursos agrupados em `fieldset` com controles nativos;
-- erros associados aos campos, foco no primeiro erro e regiões vivas;
-- foco visível, contraste de estados e suporte a `forced-colors` e redução de movimento.
+Evitei tratar segurança e moderação como detalhes de infraestrutura. Elas fazem parte do comportamento do produto:
 
-Testes automatizados ajudam a detectar regressões, mas não substituem validação manual com teclado, leitor de tela, zoom e alto contraste.
+- respostas públicas nunca incluem e-mail, credenciais ou campos internos de governança;
+- DTOs com campos permitidos evitam mass assignment;
+- o cookie do refresh token usa `HttpOnly`, `Secure` e `SameSite=Lax` em produção;
+- rotação, revogação da sessão atual e logout global são controlados no servidor;
+- exclusão de conta anonimiza as contribuições e preserva o histórico comunitário;
+- conteúdo pendente não aparece nas consultas públicas;
+- somente avaliações aprovadas entram na média;
+- recursos enviados pelo autor aparecem como informados, não como confirmados.
 
-## Confiança comunitária
+## Interface
 
-- Recursos cadastrados pelo autor são identificados como **informados**, não confirmados.
-- Apenas avaliações aprovadas entram na média; sem avaliações, a interface mostra “Ainda não avaliado”.
-- Conteúdo pendente não aparece na consulta pública.
-- Edições materiais em um local aprovado retornam à fila de moderação.
-- Aprovação, rejeição, denúncia e arquivamento preservam histórico.
-- Autores não podem apagar definitivamente contribuições de terceiros.
+### Consulta em tela pequena
 
-## Stack
+![Página inicial do AcessaMapa em 320 pixels de largura, com a lista ativa e a opção de alternar para o mapa.](docs/screenshots/inicio-320px.png)
 
-- Frontend: React 19, Vite, React Router, Leaflet e CSS responsivo.
-- Backend: Node.js 24, Express, Mongoose e MongoDB.
-- Qualidade: Vitest, Testing Library, axe-core, Supertest e Playwright.
-- Contrato: OpenAPI 3.1 validado no CI.
-- Hospedagem planejada: um Web Service no Render e MongoDB Atlas.
+### Cadastro com endereço e coordenadas editáveis
+
+![Formulário de cadastro de um local fictício com endereço, latitude e longitude editáveis.](docs/screenshots/cadastro-local.png)
+
+### Moderação com histórico
+
+![Fila de moderação com conteúdo fictício pendente, ações de aprovação e rejeição e histórico recente.](docs/screenshots/fila-moderacao.png)
+
+## Tecnologias
+
+| Área | Tecnologias |
+| --- | --- |
+| Frontend | React 19, Vite, React Router, Leaflet e CSS responsivo |
+| Backend | Node.js 24, Express 5, Mongoose e MongoDB |
+| Testes | Vitest, Testing Library, axe-core, Supertest e Playwright |
+| Contrato | OpenAPI 3.1 validado no CI |
+| Deploy | Render e MongoDB Atlas |
+
+## Qualidade e testes
+
+O pipeline executa análise estática, testes unitários e de integração, cobertura, validação do contrato OpenAPI, build de produção e testes E2E. Os limites mínimos são 80% para linhas e funções e 75% para branches.
+
+Os cenários automatizados cobrem, entre outros pontos:
+
+- tentativa de alterar autor, status, média ou timestamps por mass assignment;
+- ausência de dados sensíveis em endpoints públicos;
+- rotação, reutilização indevida e revogação de sessões;
+- permissões de usuário, autor e moderador;
+- moderação, denúncia, arquivamento e preservação de histórico;
+- navegação por teclado e recusa de geolocalização;
+- equivalência de informação entre lista e mapa;
+- verificações axe nas rotas principais.
 
 ## Executando localmente
 
 Pré-requisitos:
 
 - Node.js 24 e npm 11;
-- MongoDB local em replica set ou MongoDB Atlas, sempre em banco isolado para desenvolvimento;
-- nenhuma credencial ou dado real no repositório.
+- MongoDB local em replica set ou MongoDB Atlas;
+- variáveis de ambiente configuradas em `backend/.env`.
 
 ```bash
 git clone https://github.com/lucasppinheiro/mapa-acessibilidade.git
 cd mapa-acessibilidade
 npm run setup
-```
-
-Copie o exemplo de ambiente do backend para `backend/.env` e use valores locais. Nunca versione o arquivo `.env`.
-
-```bash
 npm run dev
 ```
 
-O Vite inicia o frontend em desenvolvimento e o Express inicia a API. Em produção, execute o build e inicie somente o Express:
+Para gerar e executar a versão de produção:
 
 ```bash
 npm run build
 npm start
 ```
 
-## Comandos
+Comandos disponíveis:
 
 | Comando | Finalidade |
 | --- | --- |
-| `npm run setup` | Instala dependências da raiz, backend e frontend com lockfiles. |
-| `npm run lint` | Executa análise estática nos dois projetos. |
-| `npm test` | Executa testes unitários e de integração. |
-| `npm run coverage` | Verifica os limites mínimos de cobertura. |
+| `npm run setup` | Instala as dependências da raiz, do backend e do frontend. |
+| `npm run lint` | Executa a análise estática dos dois projetos. |
+| `npm test` | Executa os testes unitários e de integração. |
+| `npm run coverage` | Executa os testes e verifica os limites de cobertura. |
 | `npm run openapi:lint` | Valida o contrato OpenAPI 3.1. |
 | `npm run build` | Gera o frontend de produção. |
-| `npm run e2e` | Executa jornadas Playwright e verificações axe. |
-| `npm run migrate` | Executa a migração idempotente de dados legados. |
-| `npm run seed` | Carrega somente o dataset sintético idempotente. |
-
-## Testes e critérios
-
-O pipeline executa lint, testes, cobertura, validação OpenAPI, build e E2E. Os limites adotados são 80% para linhas e funções e 75% para branches.
-
-Entre os cenários de segurança e confiança estão mass assignment, ausência de dados sensíveis em respostas públicas, rotação e revogação de sessões, permissões, visibilidade de conteúdo pendente e preservação do histórico de moderação.
-
-Entre os cenários de acessibilidade estão navegação somente por teclado, recusa de geolocalização, equivalência entre lista e mapa e ausência de violações axe críticas ou sérias nas rotas principais. A validação manual continua obrigatória.
+| `npm run e2e` | Executa as jornadas Playwright e as verificações axe. |
+| `npm run migrate` | Executa a migração idempotente dos dados legados. |
+| `npm run seed` | Carrega o conjunto de dados sintéticos. |
 
 ## Deploy da demonstração
 
-O arquivo [`render.yaml`](render.yaml) prepara um único Web Service. O provisionamento ainda está **pendente** e depende de autorização e credenciais fornecidas fora do repositório.
+A demonstração está publicada em [acessamapa.onrender.com](https://acessamapa.onrender.com). O Render cria o serviço a partir de [render.yaml](render.yaml), executa o build do frontend e inicia o Express. O endpoint de prontidão confirma a conexão com o MongoDB antes de considerar a instância disponível.
 
-Antes de publicar:
+O banco público contém apenas locais, contas e avaliações fictícias. Credenciais e a conta moderadora ficam fora do repositório.
 
-1. criar um usuário exclusivo da aplicação no MongoDB Atlas;
-2. restringir a lista de rede do Atlas ao ambiente necessário;
-3. configurar segredos no painel do Render, nunca no Git;
-4. executar migração e seed sintético no ambiente autorizado;
-5. manter a conta moderadora privada e fora do repositório;
-6. concluir o roteiro manual de acessibilidade;
-7. executar smoke test usando somente dados sintéticos.
+## Documentação técnica
 
-O uso de replica set é obrigatório porque as decisões de moderação e operações de arquivamento preservam consistência por transação.
-
-Não há URL pública confirmada nesta versão. O link de demonstração será adicionado apenas após deploy e validação. As capturas abaixo foram geradas localmente com fixtures exclusivamente sintéticas.
-
-## Evidências visuais
-
-### Lista textual e mapa complementar no desktop
-
-![Página inicial do AcessaMapa no desktop, com a lista textual à esquerda e o mapa complementar à direita.](docs/screenshots/inicio-desktop.png)
-
-### Lista como visualização inicial em 320 px
-
-![Página inicial do AcessaMapa em 320 pixels de largura, com a lista ativa e a opção de alternar para o mapa.](docs/screenshots/inicio-320px.png)
-
-### Cadastro com endereço e coordenadas manuais
-
-![Formulário de cadastro de local fictício com endereço, latitude e longitude editáveis.](docs/screenshots/cadastro-local.png)
-
-### Fila de moderação e histórico
-
-![Fila de moderação com um local fictício pendente, ações de aprovação e rejeição e histórico recente.](docs/screenshots/fila-moderacao.png)
-
-As imagens documentam a apresentação visual, mas não substituem a descrição textual nem a validação com tecnologias assistivas.
-
-## Limitações conhecidas
-
-- Não houve pesquisa formal com pessoas com deficiência nesta v1.
-- A conformidade WCAG 2.2 AA ainda não foi validada manualmente.
-- A qualidade das contribuições depende da operação de moderação.
-- A geocodificação depende de provedor externo configurável; a interface não oferece autocomplete.
-- O mapa não substitui uma descrição textual equivalente.
-- Deploy, domínio, Atlas e credenciais permanecem pendentes de provisionamento.
-
-## Estado da autoria e licença
-
-A origem e os termos de licenciamento anteriores ainda precisam ser validados. Por esse motivo, este repositório não declara uma licença de uso e não inclui arquivo `LICENSE` nesta versão.
+- [Contrato OpenAPI 3.1](docs/openapi.yaml)
+- [Preparação e operação do deploy](docs/deploy.md)
+- [Migração idempotente para o modelo v1](docs/migracao-v1.md)
+- [Roteiro de verificação de acessibilidade](docs/validacao-acessibilidade.md)
