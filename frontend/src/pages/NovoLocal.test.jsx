@@ -128,7 +128,7 @@ describe('NovoLocal', () => {
     expect(screen.getByLabelText('Longitude')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Informe uma latitude entre -90 e 90.')).toBeInTheDocument();
     expect(screen.getByText('Informe uma longitude entre -180 e 180.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Latitude')).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText('Latitude')).toHaveFocus());
     expect(criarLocal).not.toHaveBeenCalled();
   });
 
