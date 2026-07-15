@@ -24,4 +24,15 @@ describe('ErrorBoundary', () => {
     if (window.location.reload === reload) await userEvent.click(botao);
     if (original && window.location.reload === reload) Object.defineProperty(window.location, 'reload', { value: original });
   });
+
+  it('permite isolar uma falha com fallback local', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(
+      <ErrorBoundary fallback={<p role="alert">Recurso opcional indisponível.</p>}>
+        <Quebra />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Recurso opcional indisponível.');
+    expect(screen.queryByRole('heading', { name: 'Algo deu errado' })).not.toBeInTheDocument();
+  });
 });

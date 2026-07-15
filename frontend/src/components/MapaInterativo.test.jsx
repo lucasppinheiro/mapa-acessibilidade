@@ -2,7 +2,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-const mapMocks = vi.hoisted(() => ({ setView: vi.fn(), events: null, divIcon: vi.fn((value) => value) }));
+const mapMocks = vi.hoisted(() => ({ setView: vi.fn(), invalidateSize: vi.fn(), events: null, divIcon: vi.fn((value) => value) }));
 
 vi.mock('leaflet', () => {
   class DefaultIcon {}
@@ -19,7 +19,7 @@ vi.mock('react-leaflet', () => ({
   },
   Popup: ({ children }) => <div>{children}</div>,
   TileLayer: () => null,
-  useMap: () => ({ setView: mapMocks.setView }),
+  useMap: () => ({ setView: mapMocks.setView, invalidateSize: mapMocks.invalidateSize }),
   useMapEvents: (events) => { mapMocks.events = events; return {}; }
 }));
 
@@ -34,6 +34,7 @@ describe('MapaInterativo', () => {
     expect(screen.getByRole('button', { name: 'Marcador do local Biblioteca' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ver detalhes de Biblioteca' })).toBeInTheDocument();
     expect(mapMocks.setView).toHaveBeenCalledWith([-23, -46], 16);
+    expect(mapMocks.invalidateSize).toHaveBeenCalledWith({ animate: false });
   });
 
   it('permite ajuste opcional sem tornar o mapa obrigatório', () => {

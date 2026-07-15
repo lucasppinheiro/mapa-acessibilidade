@@ -54,16 +54,18 @@ async function esperarSemViolacoesSerias(page) {
 }
 
 test('lista é inicial e alternância para mapa funciona pelo teclado', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
+  await page.setViewportSize({ width: 320, height: 812 });
   await mockAuth(page, false);
   await mockApiPublica(page);
   await page.goto('/');
   await expect(page.getByRole('link', { name: 'Biblioteca Sintética' })).toBeVisible();
   const mapa = page.getByRole('button', { name: /Mapa/ });
+  const marcador = page.getByRole('button', { name: 'Marcador do local Biblioteca Sintética' });
+  await expect(marcador).toHaveCount(0);
   await mapa.focus();
   await page.keyboard.press('Space');
   await expect(mapa).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'Marcador do local Biblioteca Sintética' })).toBeVisible();
+  await expect(marcador).toBeVisible();
   await esperarSemViolacoesSerias(page);
 });
 
@@ -107,6 +109,12 @@ test('detalhes, conta e moderação passam axe nas fixtures sintéticas', async 
 
   await page.goto(`/local/${local.id}`);
   await expect(page.getByRole('heading', { name: 'Biblioteca Sintética' })).toBeVisible();
+  const marcador = page.getByRole('button', { name: 'Marcador do local Biblioteca Sintética' });
+  await expect(marcador).toHaveCount(0);
+  const resumoMapa = page.getByText('Ver no mapa (opcional)');
+  await resumoMapa.focus();
+  await page.keyboard.press('Enter');
+  await expect(marcador).toBeVisible();
   await esperarSemViolacoesSerias(page);
   await page.goto('/conta');
   await expect(page.getByRole('heading', { name: 'Minha conta' })).toBeVisible();

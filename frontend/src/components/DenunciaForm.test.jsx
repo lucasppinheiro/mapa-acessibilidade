@@ -13,7 +13,13 @@ vi.mock('../services/api', () => ({
 }));
 
 function Caminho() {
-  return <span data-testid="caminho">{useLocation().pathname}</span>;
+  const location = useLocation();
+  return (
+    <>
+      <span data-testid="caminho">{location.pathname}</span>
+      <output data-testid="estado-navegacao">{JSON.stringify(location.state)}</output>
+    </>
+  );
 }
 
 describe('DenunciaForm', () => {
@@ -41,6 +47,7 @@ describe('DenunciaForm', () => {
     await user.click(screen.getByText('Denunciar este conteúdo'));
     await user.click(screen.getByRole('button', { name: 'Enviar denúncia' }));
     expect(screen.getByTestId('caminho')).toHaveTextContent('/login');
+    expect(screen.getByTestId('estado-navegacao')).toHaveTextContent(JSON.stringify({ destino: '/' }));
   });
 
   it('anuncia falha sem perder os dados', async () => {

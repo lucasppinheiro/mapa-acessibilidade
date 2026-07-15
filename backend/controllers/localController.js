@@ -3,11 +3,10 @@ const Avaliacao = require('../models/Avaliacao');
 const AppError = require('../utils/AppError');
 const pick = require('../utils/pick');
 const { localDTO } = require('../utils/dtos');
+const { criarPadraoBuscaToleranteAcentos } = require('../utils/buscaTexto');
 const { RESOURCE_KEYS } = require('../constants/domain');
 const { recordAudit } = require('../services/auditService');
 const { withTransaction } = require('../services/transactionService');
-
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const resourceInput = (resources = {}) => Object.entries(resources).reduce((result, [key, value]) => {
   if (RESOURCE_KEYS.includes(key)) result[key] = value;
@@ -74,7 +73,7 @@ exports.listarLocais = async (req, res) => {
   }
   if (req.query.notaMinima) filter.mediaAvaliacao = { $gte: Number(req.query.notaMinima) };
   if (req.query.busca) {
-    const safeSearch = escapeRegex(String(req.query.busca).slice(0, 100));
+    const safeSearch = criarPadraoBuscaToleranteAcentos(req.query.busca);
     filter.$or = [
       { nome: { $regex: safeSearch, $options: 'i' } },
       { endereco: { $regex: safeSearch, $options: 'i' } },
