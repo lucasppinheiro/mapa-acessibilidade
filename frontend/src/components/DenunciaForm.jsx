@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { FiFlag } from 'react-icons/fi';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { criarDenuncia, extrairMensagemErro } from '../services/api';
 
 export default function DenunciaForm({ alvoTipo, alvoId }) {
   const { autenticado } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [motivo, setMotivo] = useState('informacao_incorreta');
   const [detalhes, setDetalhes] = useState('');
   const [mensagem, setMensagem] = useState('');
@@ -15,7 +16,7 @@ export default function DenunciaForm({ alvoTipo, alvoId }) {
   const enviar = async (event) => {
     event.preventDefault();
     if (!autenticado) {
-      navigate('/login');
+      navigate('/login', { state: { destino: location.pathname } });
       return;
     }
     setEnviando(true);

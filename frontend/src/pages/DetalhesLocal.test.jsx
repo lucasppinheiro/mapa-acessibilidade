@@ -1,4 +1,4 @@
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +27,12 @@ const local = {
 };
 const avaliacao = { id: 'a1', nota: 4, comentario: 'Experiência detalhada e fictícia.', autor: { id: 'u1', nome: 'Ana' }, criadoEm: '2026-01-02', observacoesRecursos: recursos };
 
-const renderPagina = () => render(<MemoryRouter initialEntries={['/local/l1']}><Routes><Route path="/local/:id" element={<DetalhesLocal />} /><Route path="/" element={<p>Início</p>} /></Routes></MemoryRouter>);
+function EstadoLogin() {
+  const location = useLocation();
+  return <output data-testid="estado-login">{JSON.stringify(location.state)}</output>;
+}
+
+const renderPagina = () => render(<MemoryRouter initialEntries={['/local/l1']}><Routes><Route path="/local/:id" element={<DetalhesLocal />} /><Route path="/login" element={<EstadoLogin />} /><Route path="/" element={<p>Início</p>} /></Routes></MemoryRouter>);
 
 describe('DetalhesLocal', () => {
   beforeEach(() => {
@@ -49,6 +54,18 @@ describe('DetalhesLocal', () => {
     expect(screen.getByText(/2 confirmações; 1 contestações/)).toBeInTheDocument();
     expect(screen.getByText('Experiência detalhada e fictícia.')).toBeInTheDocument();
     expect(screen.getByText('Denúncia local l1')).toBeInTheDocument();
+  });
+
+  it('carrega o mapa do detalhe somente quando solicitado', async () => {
+    const user = userEvent.setup();
+    renderPagina();
+    await screen.findByRole('heading', { name: 'Centro cultural' });
+    const resumo = screen.getByText('Ver no mapa (opcional)');
+    expect(screen.queryByText('Mapa complementar')).not.toBeInTheDocument();
+    await user.click(resumo);
+    expect(await screen.findByText('Mapa complementar')).toBeInTheDocument();
+    await user.click(resumo);
+    await waitFor(() => expect(screen.getByText('Mapa complementar')).not.toBeVisible());
   });
 
   it('valida e envia avaliação tri-state para moderação', async () => {
@@ -80,10 +97,12 @@ describe('DetalhesLocal', () => {
   });
 
   it('oferece login quando visitante e trata local ausente', async () => {
+    const user = userEvent.setup();
     auth.autenticado = false;
     auth.usuario = null;
     renderPagina();
-    expect(await screen.findByRole('link', { name: /Entre na sua conta/ })).toBeInTheDocument();
+    await user.click(await screen.findByRole('link', { name: /Entre na sua conta/ }));
+    expect(screen.getByTestId('estado-login')).toHaveTextContent(JSON.stringify({ destino: '/local/l1' }));
   });
 
   it('mostra erro estruturado ao falhar o carregamento', async () => {

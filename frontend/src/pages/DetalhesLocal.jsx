@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import DenunciaForm from '../components/DenunciaForm';
 import InlineError from '../components/InlineError';
-import MapaInterativo from '../components/MapaInterativo';
+import MapaSobDemanda from '../components/MapaSobDemanda';
 import { CategoriaBadge, RecursosFieldset } from '../components/RecursosInfo';
 import StarRating from '../components/StarRating';
 import { ESTADOS_RECURSO, RECURSOS, recursosDesconhecidos } from '../constants';
@@ -36,6 +36,7 @@ export default function DetalhesLocal() {
   const [avaliacao, setAvaliacao] = useState({ nota: null, comentario: '', observacoesRecursos: recursosDesconhecidos() });
   const [errosForm, setErrosForm] = useState({});
   const [erroForm, setErroForm] = useState('');
+  const [mapaAberto, setMapaAberto] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -193,7 +194,7 @@ export default function DetalhesLocal() {
                   <RecursosFieldset legenda="O que você observou nos recursos?" valores={avaliacao.observacoesRecursos} onChange={(recurso, estado) => setAvaliacao((atual) => ({ ...atual, observacoesRecursos: { ...atual.observacoesRecursos, [recurso]: estado } }))} />
                   <button type="submit" className="button-primary" disabled={enviando}><FiSend aria-hidden="true" /> {enviando ? 'Enviando...' : 'Enviar para moderação'}</button>
                 </form>
-              ) : <p className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4"><Link className="font-semibold text-blue-900 underline" to="/login">Entre na sua conta</Link> para avaliar.</p>}
+              ) : <p className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4"><Link className="font-semibold text-blue-900 underline" to="/login" state={{ destino: `/local/${id}` }}>Entre na sua conta</Link> para avaliar.</p>}
 
               <div className="mt-5 space-y-4">
                 {avaliacoes.map((item) => {
@@ -221,7 +222,7 @@ export default function DetalhesLocal() {
 
           <aside className="space-y-4" aria-label="Localização do local">
             <div className="card"><h2 className="text-lg font-semibold">Coordenadas</h2>{coordenadas ? <p className="mt-2 text-sm">Latitude {coordenadas.lat.toFixed(6)}; longitude {coordenadas.lng.toFixed(6)}.</p> : <p>Coordenadas não disponíveis.</p>}</div>
-            {coordenadas && <details className="card"><summary className="cursor-pointer font-semibold">Ver no mapa (opcional)</summary><div className="mt-3 h-72"><MapaInterativo locais={[local]} centroInicial={[coordenadas.lat, coordenadas.lng]} titulo={`Mapa de ${local.nome}`} /></div></details>}
+            {coordenadas && <details className="card" onToggle={(event) => setMapaAberto(event.currentTarget.open)}><summary className="cursor-pointer font-semibold">Ver no mapa (opcional)</summary><div className="mt-3 h-72"><MapaSobDemanda ativo={mapaAberto} locais={[local]} centroInicial={[coordenadas.lat, coordenadas.lng]} titulo={`Mapa de ${local.nome}`} /></div></details>}
           </aside>
         </div>
       </div>

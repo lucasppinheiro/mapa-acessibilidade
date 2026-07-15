@@ -16,6 +16,7 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback;
       return (
         <main id="conteudo-principal" tabIndex="-1" className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
           <div className="max-w-md text-center">

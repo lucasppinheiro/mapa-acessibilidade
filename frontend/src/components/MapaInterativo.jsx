@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { Link } from 'react-router-dom';
 import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { CATEGORIAS } from '../constants';
@@ -8,9 +12,9 @@ import StarRating from './StarRating';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png'
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow
 });
 
 function iconeDaNota(nota) {
@@ -55,11 +59,22 @@ function CentralizarMapa({ centro }) {
   return null;
 }
 
+function AjustarVisibilidade({ ativo }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (ativo) map.invalidateSize({ animate: false });
+  }, [ativo, map]);
+
+  return null;
+}
+
 export default function MapaInterativo({
   locais = [],
   onLocationSelect,
   marcadorSelecionado,
   centroInicial,
+  ativo = true,
   titulo = 'Mapa dos locais'
 }) {
   const centro = centroInicial || (marcadorSelecionado
@@ -76,6 +91,7 @@ export default function MapaInterativo({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <AjustarVisibilidade ativo={ativo} />
         <CentralizarMapa centro={marcadorSelecionado ? [marcadorSelecionado.lat, marcadorSelecionado.lng] : centroInicial} />
         {onLocationSelect && <SeletorNoMapa onLocationSelect={onLocationSelect} />}
 

@@ -1,53 +1,66 @@
 import { useRef, useState } from 'react';
-import { FiCrosshair, FiMapPin, FiSearch, FiSend } from 'react-icons/fi';
-import { useNavigate } from 'react-router-dom';
+import { FiCrosshair, FiSearch, FiSend } from 'react-icons/fi';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import InlineError from '../components/InlineError';
-import MapaInterativo from '../components/MapaInterativo';
+import MapaSobDemanda from '../components/MapaSobDemanda';
 import { RecursosFieldset } from '../components/RecursosInfo';
 import { CATEGORIAS, recursosDesconhecidos } from '../constants';
 import { buscarEndereco, criarLocal, extrairMensagemErro } from '../services/api';
 import { errosDeCampos } from '../utils/domain';
+import {
+  normalizarPreenchimentoLocal,
+  normalizarResultadosGeocodificacao,
+  preenchimentoDeResultadoGeocodificacao
+} from '../utils/navigation';
 
 const validar = (form) => {
   const erros = {};
   if (form.nome.trim().length < 2) erros.nome = 'Informe o nome do local.';
   if (form.endereco.trim().length < 5) erros.endereco = 'Informe o endereço ou uma referência.';
   if (form.descricao.trim().length < 10) erros.descricao = 'Descreva o local com pelo menos 10 caracteres.';
-  const lat = Number(form.latitude);
-  const lng = Number(form.longitude);
-  if (!Number.isFinite(lat) || lat < -90 || lat > 90) erros.latitude = 'Informe uma latitude entre -90 e 90.';
-  if (!Number.isFinite(lng) || lng < -180 || lng > 180) erros.longitude = 'Informe uma longitude entre -180 e 180.';
+  const latitudeVazia = String(form.latitude).trim() === '';
+  const longitudeVazia = String(form.longitude).trim() === '';
+  const lat = latitudeVazia ? Number.NaN : Number(form.latitude);
+  const lng = longitudeVazia ? Number.NaN : Number(form.longitude);
+  if (latitudeVazia || !Number.isFinite(lat) || lat < -90 || lat > 90) erros.latitude = 'Informe uma latitude entre -90 e 90.';
+  if (longitudeVazia || !Number.isFinite(lng) || lng < -180 || lng > 180) erros.longitude = 'Informe uma longitude entre -180 e 180.';
   return erros;
 };
 
-const normalizarResultados = (data) => data.resultados || data.itens || (Array.isArray(data) ? data : []);
-
 export default function NovoLocal() {
   const navigate = useNavigate();
+  const { state } = useLocation();
   const formRef = useRef(null);
-  const [form, setForm] = useState({
+  const [preenchimentoInicial] = useState(() => normalizarPreenchimentoLocal(state?.preenchimentoLocal));
+  const [form, setForm] = useState(() => ({
     nome: '',
-    endereco: '',
+    endereco: preenchimentoInicial?.endereco || '',
     descricao: '',
     categoria: 'outro',
-    latitude: '',
-    longitude: '',
+    latitude: preenchimentoInicial?.latitude || '',
+    longitude: preenchimentoInicial?.longitude || '',
     recursos: recursosDesconhecidos()
-  });
-  const [consulta, setConsulta] = useState('');
+  }));
+  const [consulta, setConsulta] = useState(preenchimentoInicial?.endereco || '');
   const [resultados, setResultados] = useState([]);
   const [resultadoSelecionado, setResultadoSelecionado] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [localizando, setLocalizando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erros, setErros] = useState({});
-  const [mensagemEndereco, setMensagemEndereco] = useState('');
+  const [mensagemEndereco, setMensagemEndereco] = useState(
+    preenchimentoInicial ? 'Endereço e coordenadas preenchidos a partir da busca. Revise-os antes de enviar.' : ''
+  );
   const [erroGeral, setErroGeral] = useState('');
+  const [mapaAberto, setMapaAberto] = useState(false);
 
   const atualizar = (campo, valor) => setForm((atual) => ({ ...atual, [campo]: valor }));
-  const coordenadas = Number.isFinite(Number(form.latitude)) && Number.isFinite(Number(form.longitude)) && form.latitude !== '' && form.longitude !== ''
-    ? { lat: Number(form.latitude), lng: Number(form.longitude) }
+  const latitude = String(form.latitude).trim() === '' ? Number.NaN : Number(form.latitude);
+  const longitude = String(form.longitude).trim() === '' ? Number.NaN : Number(form.longitude);
+  const coordenadas = Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+    ? { lat: latitude, lng: longitude }
     : null;
 
   const pesquisarEndereco = async () => {
@@ -59,7 +72,7 @@ export default function NovoLocal() {
     setBuscando(true);
     try {
       const { data } = await buscarEndereco(consulta.trim());
-      const itens = normalizarResultados(data);
+      const itens = normalizarResultadosGeocodificacao(data);
       setResultados(itens);
       setMensagemEndereco(itens.length ? `${itens.length} resultados encontrados.` : 'Nenhum endereço encontrado. Você pode preencher as coordenadas manualmente.');
     } catch (error) {
@@ -70,12 +83,13 @@ export default function NovoLocal() {
   };
 
   const selecionarResultado = (item, indice) => {
-    const [longitudeGeo, latitudeGeo] = item.localizacao?.coordinates || [];
-    const latitude = latitudeGeo ?? item.latitude ?? item.lat;
-    const longitude = longitudeGeo ?? item.longitude ?? item.lon ?? item.lng;
-    const endereco = item.endereco || item.nome || item.display_name;
+    const preenchimento = preenchimentoDeResultadoGeocodificacao(item);
+    if (!preenchimento) {
+      setMensagemEndereco('Este resultado não possui coordenadas válidas. Escolha outro ou preencha os campos manualmente.');
+      return;
+    }
     setResultadoSelecionado(String(item.id || indice));
-    setForm((atual) => ({ ...atual, endereco, latitude: String(latitude), longitude: String(longitude) }));
+    setForm((atual) => ({ ...atual, ...preenchimento }));
   };
 
   const usarLocalizacao = () => {
@@ -221,11 +235,11 @@ export default function NovoLocal() {
               <button type="button" className="button-secondary mt-3" disabled={localizando} onClick={usarLocalizacao}><FiCrosshair aria-hidden="true" /> {localizando ? 'Obtendo localização...' : 'Usar minha localização'}</button>
             </div>
 
-            <details className="mt-5 rounded-lg border border-slate-300 p-4">
+            <details className="mt-5 rounded-lg border border-slate-300 p-4" onToggle={(event) => setMapaAberto(event.currentTarget.open)}>
               <summary className="cursor-pointer font-semibold text-slate-900">Conferir ou ajustar no mapa (opcional)</summary>
               <p className="mt-2 text-sm text-slate-700">Clique no mapa para ajustar as coordenadas. O preenchimento manual acima continua disponível.</p>
               <div className="mt-3 h-96">
-                <MapaInterativo marcadorSelecionado={coordenadas} onLocationSelect={({ lat, lng }) => setForm((atual) => ({ ...atual, latitude: String(lat), longitude: String(lng) }))} titulo="Mapa para conferência das coordenadas" />
+                <MapaSobDemanda ativo={mapaAberto} marcadorSelecionado={coordenadas} onLocationSelect={({ lat, lng }) => setForm((atual) => ({ ...atual, latitude: String(lat), longitude: String(lng) }))} titulo="Mapa para conferência das coordenadas" />
               </div>
             </details>
           </section>

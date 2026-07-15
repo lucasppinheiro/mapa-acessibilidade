@@ -343,6 +343,47 @@ describe('segurança, DTOs e moderação', () => {
     expect((await Local.findById(local.id)).status).toBe('arquivado');
   });
 
+  test('busca de locais tolera acentos sem interpretar operadores de regex', async () => {
+    const autor = await User.create(userData('busca-acentos'));
+    await Local.create([
+      {
+        ...localData(),
+        nome: 'Praça das Flores',
+        autor: autor._id,
+        status: 'aprovado'
+      },
+      {
+        ...localData(),
+        nome: 'Praca Municipal',
+        endereco: 'Avenida sem acentos, 20',
+        autor: autor._id,
+        status: 'aprovado'
+      }
+    ]);
+
+    const semAcento = await request(app)
+      .get('/api/v1/locais')
+      .query({ busca: 'Praca' })
+      .expect(200);
+    expect(semAcento.body.locais.map((local) => local.nome)).toEqual(
+      expect.arrayContaining(['Praça das Flores', 'Praca Municipal'])
+    );
+
+    const comAcento = await request(app)
+      .get('/api/v1/locais')
+      .query({ busca: 'Praça' })
+      .expect(200);
+    expect(comAcento.body.locais.map((local) => local.nome)).toEqual(
+      expect.arrayContaining(['Praça das Flores', 'Praca Municipal'])
+    );
+
+    const tentativaRegex = await request(app)
+      .get('/api/v1/locais')
+      .query({ busca: '.*' })
+      .expect(200);
+    expect(tentativaRegex.body.locais).toHaveLength(0);
+  });
+
   test('arquivamento de avaliação aprovada recalcula a média e protege terceiros', async () => {
     const ownerAgent = request.agent(app);
     const { token: ownerToken, usuario: owner } = await register(ownerAgent, 'autoravaliacao');

@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
 import { FiLogIn } from 'react-icons/fi';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import InlineError from '../components/InlineError';
 import { useAuth } from '../context/useAuth';
 import { extrairMensagemErro } from '../services/api';
 import { errosDeCampos } from '../utils/domain';
+import { estadoRetornoSeguro } from '../utils/navigation';
 
 const validar = (form, modo) => {
   const erros = {};
@@ -13,6 +14,13 @@ const validar = (form, modo) => {
   if (form.senha.length < 8 || form.senha.length > 128) erros.senha = 'A senha deve ter entre 8 e 128 caracteres.';
   else if (modo === 'registro' && !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.senha)) erros.senha = 'Use pelo menos uma letra maiúscula, uma minúscula e um número.';
   return erros;
+};
+
+const mensagemDeContexto = (modo, destino) => {
+  if (modo === 'registro') return 'Crie uma conta sem informar dados sobre deficiência.';
+  if (destino === '/novo-local') return 'Entre para continuar o cadastro do local.';
+  if (destino.startsWith('/local/')) return 'Entre para voltar ao local e continuar sua contribuição.';
+  return 'Entre para cadastrar e avaliar locais.';
 };
 
 export default function Login() {
@@ -24,6 +32,8 @@ export default function Login() {
   const formularioRef = useRef(null);
   const { login, registrar } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const retorno = estadoRetornoSeguro(location.state);
 
   const mudarModo = (novoModo) => {
     setModo(novoModo);
@@ -45,7 +55,10 @@ export default function Login() {
     try {
       if (modo === 'login') await login(form.email, form.senha);
       else await registrar(form);
-      navigate('/');
+      navigate(retorno.destino, {
+        replace: true,
+        state: retorno.preenchimentoLocal ? { preenchimentoLocal: retorno.preenchimentoLocal } : undefined
+      });
     } catch (error) {
       const errosApi = errosDeCampos(error);
       if (Object.keys(errosApi).length) {
@@ -66,7 +79,7 @@ export default function Login() {
       <div className="mx-auto max-w-md">
         <h1 id="titulo-pagina" className="text-3xl font-bold text-slate-950">{modo === 'login' ? 'Entrar' : 'Criar conta'}</h1>
         <p className="mt-2 text-slate-700">
-          {modo === 'login' ? 'Entre para cadastrar e avaliar locais.' : 'Crie uma conta sem informar dados sobre deficiência.'}
+          {mensagemDeContexto(modo, retorno.destino)}
         </p>
 
         <div className="mt-6 grid grid-cols-2 rounded-lg border border-slate-300 bg-slate-100 p-1" aria-label="Escolha do formulário">
